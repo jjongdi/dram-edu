@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DRAM 동작 시뮬레이터</title>
+<meta name="description" content="DRAM 셀 동작 · 센스앰프 · Row Hammer를 회로, 구조, 타이밍으로 동시에 따라가는 인터랙티브 시뮬레이터 모음.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@600;700;800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#e9edf6; --bg2:#f4f6fb; --glow:rgba(42,102,220,.09);
+  --surface:#ffffff; --surface-2:#f2f4fa; --groove:#e8ecf5;
+  --ink:#121831; --ink2:#434c6e; --ink3:#7982a3;
+  --line:#dae0ed; --line-soft:rgba(18,24,49,.08);
+  --e:#a06d00; --ok:#178f6f;
+  --wl:#a06d00; --bl:#2a66dc; --blb:#7650cf; --chg:#0f766e; --agg:#d2392f; --vic:#7650cf;
+  --shadow:0 1px 2px rgba(18,24,49,.06),0 10px 28px rgba(18,24,49,.07);
+  --display:"Gothic A1","Noto Sans KR",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Noto Sans KR",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#080c19; --bg2:#0d1226; --glow:rgba(255,196,67,.07);
+  --surface:#131930; --surface-2:#192040; --groove:#0c1124;
+  --ink:#e9edf8; --ink2:#b0b9d6; --ink3:#7f8ab0;
+  --line:#262f55; --line-soft:rgba(160,180,240,.10);
+  --e:#ffc443; --ok:#4fd1a5;
+  --wl:#ffc443; --bl:#5a92ff; --blb:#a98bff; --chg:#2dd4bf; --agg:#ff6b5f; --vic:#a98bff;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.28);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#080c19; --bg2:#0d1226; --glow:rgba(255,196,67,.07);
+  --surface:#131930; --surface-2:#192040; --groove:#0c1124;
+  --ink:#e9edf8; --ink2:#b0b9d6; --ink3:#7f8ab0;
+  --line:#262f55; --line-soft:rgba(160,180,240,.10);
+  --e:#ffc443; --ok:#4fd1a5;
+  --wl:#ffc443; --bl:#5a92ff; --blb:#a98bff; --chg:#2dd4bf; --agg:#ff6b5f; --vic:#a98bff;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.28);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;color:var(--ink);word-break:keep-all;-webkit-font-smoothing:antialiased;
+  font-family:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  font-size:15px;line-height:1.6;
+  background:radial-gradient(1000px 560px at 88% -14%,var(--glow) 0%,transparent 62%),
+             linear-gradient(180deg,var(--bg2) 0%,var(--bg) 60%);
+  background-color:var(--bg);background-attachment:fixed;
+}
+.wrap{max-width:1000px;margin:0 auto;padding:24px 18px 64px}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:none}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:8px}
+
+.byline{text-align:right;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink3);margin:0 2px 10px 0}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 24px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.brand{display:flex;gap:16px;align-items:center;min-width:0}
+.brand>div{min-width:0}
+.mark{width:54px;height:54px;flex:0 0 auto}
+.eyebrow{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:var(--ink3);margin-bottom:7px}
+.eyebrow::after{content:"";flex:1;min-width:40px;height:1px;background:var(--line-soft)}
+h1{font-family:var(--display);font-size:38px;font-weight:800;letter-spacing:-.05em;margin:0;line-height:1.15;text-wrap:balance}
+h1 em{font-style:normal;font-family:var(--mono);font-size:.58em;font-weight:500;letter-spacing:-.01em;color:var(--ink3);vertical-align:.2em}
+.sub{font-family:var(--mono);font-size:11.5px;color:var(--ink3);margin-top:9px}
+.modes{display:flex;align-items:center;background:var(--groove);border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px;margin-left:auto;align-self:flex-end}
+.md{width:32px;height:26px;display:grid;place-items:center;border-radius:999px;color:var(--ink3);border:1px solid transparent}
+.md svg{width:14px;height:14px;fill:currentColor}
+.md[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:0 1px 3px rgba(18,24,49,.12)}
+
+.lede{margin:20px 0 0;font-size:14px;color:var(--ink2);max-width:72ch}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:20px}
+.item{display:block;text-decoration:none;color:inherit;background:var(--surface);border:1px solid var(--line);
+  border-radius:18px;box-shadow:var(--shadow);padding:18px;transition:transform .16s cubic-bezier(.2,.8,.3,1),box-shadow .16s}
+.item:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(18,24,49,.08),0 16px 36px rgba(18,24,49,.10)}
+.item .glyph{width:46px;height:46px;margin-bottom:12px}
+.item h2{font-family:var(--display);font-size:19px;font-weight:800;letter-spacing:-.035em;margin:0 0 3px}
+.item h2 em{font-style:normal;font-family:var(--mono);font-size:.62em;font-weight:500;color:var(--ink3);vertical-align:.18em}
+.item p{margin:0;font-size:13px;color:var(--ink2)}
+.item ul{margin:11px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.item li{font-family:var(--mono);font-size:11px;color:var(--ink3);display:flex;gap:7px;align-items:baseline}
+.item li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ink3);opacity:.5;flex:0 0 auto;transform:translateY(-2px)}
+.item .go{margin-top:13px;padding-top:11px;border-top:1px solid var(--line-soft);font-family:var(--mono);font-size:11px;color:var(--ink2);display:flex;justify-content:space-between;align-items:center}
+
+footer{margin-top:26px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink3);line-height:1.7}
+footer b{color:var(--ink2);font-weight:500}
+@media (max-width:640px){ h1{font-size:28px} .mark{width:42px;height:42px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="byline">made by june</div>
+
+<header>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 56 56" aria-hidden="true">
+      <line x1="28" y1="3" x2="28" y2="26" stroke="var(--bl)" stroke-width="3" stroke-linecap="round"/>
+      <line x1="6" y1="32" x2="50" y2="32" stroke="var(--wl)" stroke-width="3" stroke-linecap="round"/>
+      <rect x="21" y="23" width="14" height="4" rx="2" fill="var(--wl)" opacity=".5"/>
+      <line x1="38" y1="26" x2="38" y2="40" stroke="var(--ink3)" stroke-width="2" stroke-linecap="round"/>
+      <line x1="29" y1="40" x2="47" y2="40" stroke="var(--chg)" stroke-width="3" stroke-linecap="round"/>
+      <line x1="29" y1="47" x2="47" y2="47" stroke="var(--chg)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="28" cy="16" r="2.6" fill="var(--chg)"/>
+    </svg>
+    <div>
+      <div class="eyebrow">SEMICONDUCTOR · MEMORY</div>
+      <h1>DRAM <em>동작</em> 시뮬레이터</h1>
+      <div class="sub">circuit · 6F² structure · timing — step by step</div>
+    </div>
+  </div>
+  <div class="modes" id="modes" role="group" aria-label="테마 전환">
+    <button class="md" data-m="light" title="라이트 모드" aria-label="라이트 모드" aria-pressed="false"><svg viewBox="0 0 16 16"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-9.6a.7.7 0 0 1 .7.7v1a.7.7 0 0 1-1.4 0v-1a.7.7 0 0 1 .7-.7zm0 11.8a.7.7 0 0 1 .7.7v1a.7.7 0 0 1-1.4 0v-1a.7.7 0 0 1 .7-.7zM1.4 8a.7.7 0 0 1 .7-.7h1a.7.7 0 0 1 0 1.4h-1a.7.7 0 0 1-.7-.7zm11.5 0a.7.7 0 0 1 .7-.7h1a.7.7 0 0 1 0 1.4h-1a.7.7 0 0 1-.7-.7zM3.3 3.3a.7.7 0 0 1 1 0l.7.7a.7.7 0 1 1-1 1l-.7-.7a.7.7 0 0 1 0-1zm7.7 7.7a.7.7 0 0 1 1 0l.7.7a.7.7 0 0 1-1 1l-.7-.7a.7.7 0 0 1 0-1zm1.7-7.7a.7.7 0 0 1 0 1l-.7.7a.7.7 0 1 1-1-1l.7-.7a.7.7 0 0 1 1 0zM5 11a.7.7 0 0 1 0 1l-.7.7a.7.7 0 0 1-1-1l.7-.7a.7.7 0 0 1 1 0z"/></svg></button>
+    <button class="md" data-m="dark" title="다크 모드" aria-label="다크 모드" aria-pressed="false"><svg viewBox="0 0 16 16"><path d="M13.3 9.6A5.6 5.6 0 0 1 6.4 2.7a.6.6 0 0 0-.8-.7 6.8 6.8 0 1 0 8.4 8.4.6.6 0 0 0-.7-.8z"/></svg></button>
+  </div>
+</header>
+
+<p class="lede">6F² DRAM 셀을 회로도 · 3차원 구조 · 타이밍 다이어그램으로 동시에 따라가는 시뮬레이터 모음입니다. 각 페이지는 단계별 재생, 라이트/다크 전환, 실시간 노드 전압 계측을 갖추고 있습니다.</p>
+
+<div class="grid">
+
+  <a class="item" href="1t1c.html">
+    <svg class="glyph" viewBox="0 0 56 56" aria-hidden="true">
+      <line x1="28" y1="3" x2="28" y2="26" stroke="var(--bl)" stroke-width="3" stroke-linecap="round"/>
+      <line x1="6" y1="32" x2="50" y2="32" stroke="var(--wl)" stroke-width="3" stroke-linecap="round"/>
+      <rect x="21" y="23" width="14" height="4" rx="2" fill="var(--wl)" opacity=".5"/>
+      <line x1="38" y1="26" x2="38" y2="40" stroke="var(--ink3)" stroke-width="2" stroke-linecap="round"/>
+      <line x1="29" y1="40" x2="47" y2="40" stroke="var(--chg)" stroke-width="3" stroke-linecap="round"/>
+      <line x1="29" y1="47" x2="47" y2="47" stroke="var(--chg)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="28" cy="16" r="2.6" fill="var(--chg)"/>
+    </svg>
+    <h2>DRAM <em>1T1C</em> 셀 동작</h2>
+    <p>트랜지스터 하나와 커패시터 하나가 1과 0을 기억하고 다시 읽어내는 전 과정.</p>
+    <ul>
+      <li>Read 1 · Read 0 · Write 1 · Write 0 · Refresh</li>
+      <li>기울어진 6F² active와 매립 word line</li>
+      <li>tRCD · tRAS · tRP 브래킷과 ΔV 확대창</li>
+    </ul>
+    <div class="go"><span>9 단계 시퀀스</span><span>→</span></div>
+  </a>
+
+  <a class="item" href="sense-amp.html">
+    <svg class="glyph" viewBox="0 0 56 56" aria-hidden="true">
+      <path d="M4 28 H20 L27 14 H52" fill="none" stroke="var(--bl)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M4 28 H20 L27 42 H52" fill="none" stroke="var(--blb)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      <rect x="17" y="21" width="14" height="14" rx="3" fill="none" stroke="var(--ink3)" stroke-width="2"/>
+      <circle cx="24" cy="28" r="2.4" fill="var(--wl)"/>
+    </svg>
+    <h2>DRAM <em>Sense Amp</em> 동작</h2>
+    <p>수십 mV의 전압 차이를 full swing으로 키워내는 과정과, 그 마진이 무너지는 조건.</p>
+    <ul>
+      <li>정상 센싱 · 약한 셀 · SA 미스매치 · retention fail</li>
+      <li>Cs · C_BL · offset · 전하 손실 슬라이더</li>
+      <li>센싱 마진 분석과 PASS / FAIL 판정</li>
+    </ul>
+    <div class="go"><span>파라미터 조작 가능</span><span>→</span></div>
+  </a>
+
+  <a class="item" href="row-hammer.html">
+    <svg class="glyph" viewBox="0 0 56 56" aria-hidden="true">
+      <line x1="6" y1="13" x2="50" y2="13" stroke="var(--agg)" stroke-width="3.4" stroke-linecap="round"/>
+      <line x1="6" y1="28" x2="50" y2="28" stroke="var(--vic)" stroke-width="3.4" stroke-linecap="round"/>
+      <line x1="6" y1="43" x2="50" y2="43" stroke="var(--agg)" stroke-width="3.4" stroke-linecap="round"/>
+      <circle cx="42" cy="20.5" r="2.4" fill="var(--e)"/>
+      <circle cx="34" cy="35.5" r="2.4" fill="var(--e)"/>
+    </svg>
+    <h2>DRAM <em>Row Hammer</em> 불량</h2>
+    <p>이웃 word line을 반복해서 여닫을 때 victim 셀의 전하가 무너져 bit flip이 되는 과정.</p>
+    <ul>
+      <li>D1 불량 · D0 불량 · double-sided · TRR 방어</li>
+      <li>hammer 횟수 N 슬라이더와 bit flip 맵</li>
+      <li>plane view와 A–A′ 단면</li>
+    </ul>
+    <div class="go"><span>N = 5,000 ~ 100,000</span><span>→</span></div>
+  </a>
+
+</div>
+
+<footer>
+  <b>수치에 대하여</b> — 각 시뮬레이터의 파라미터는 동작 원리를 이해하기 위한 교육용 가정값입니다.
+  실제 공정의 설계값이나 측정값과는 다릅니다.
+</footer>
+
+</div>
+
+<script>
+(function(){
+  var mq=window.matchMedia("(prefers-color-scheme: dark)");
+  function apply(m,persist){
+    document.documentElement.setAttribute("data-theme",m);
+    document.querySelectorAll("#modes .md").forEach(function(b){
+      b.setAttribute("aria-pressed", b.dataset.m===m ? "true":"false");
+    });
+    if(persist){ try{ localStorage.setItem("dram-theme",m); }catch(e){} }
+  }
+  var saved=null; try{ saved=localStorage.getItem("dram-theme"); }catch(e){}
+  apply(saved || (mq.matches?"dark":"light"), false);
+  document.querySelectorAll("#modes .md").forEach(function(b){
+    b.addEventListener("click",function(){ apply(b.dataset.m,true); });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DRAM 1T1C 셀 동작 시뮬레이터</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@600;700;800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* Palette and surfaces follow the Row Hammer simulator: solid cards on a navy-tinted
+   field, groove-style segmented controls, gold as the "current step" accent. */
+:root{
+  color-scheme:light;
+  --bg:#e9edf6; --bg2:#f4f6fb; --glow:rgba(42,102,220,.09);
+  --surface:#ffffff; --surface-2:#f2f4fa; --groove:#e8ecf5;
+  --ink:#121831; --ink2:#434c6e; --ink3:#7982a3;
+  --line:#dae0ed; --line-soft:rgba(18,24,49,.08);
+  --e:#a06d00; --e-soft:#fbefd0; --ok:#178f6f; --bad:#d2392f;
+  --wl:#d2392f; --bl:#2a66dc; --blb:#7650cf; --chg:#c98a00; --sa:#b0348a;
+  --si:#cfd6e9; --si2:#dde3f1; --dim:#c3cce3; --off:#a9b1cb;
+  --shadow:0 1px 2px rgba(18,24,49,.06),0 10px 28px rgba(18,24,49,.07);
+  --cap-sh:0 1px 3px rgba(18,24,49,.12);
+  /* names the script reads through getComputedStyle */
+  --panel:#ffffff; --sunk:#f2f4fa; --rule:#dae0ed; --rule-soft:rgba(18,24,49,.08);
+  --display:"Gothic A1","Noto Sans KR",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Noto Sans KR",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#080c19; --bg2:#0d1226; --glow:rgba(255,196,67,.07);
+  --surface:#131930; --surface-2:#192040; --groove:#0c1124;
+  --ink:#e9edf8; --ink2:#b0b9d6; --ink3:#7f8ab0;
+  --line:#262f55; --line-soft:rgba(160,180,240,.10);
+  --e:#ffc443; --e-soft:#3d3014; --ok:#4fd1a5; --bad:#ff6b5f;
+  --wl:#ff6b5f; --bl:#5a92ff; --blb:#a98bff; --chg:#ffc443; --sa:#f472b6;
+  --si:#232c50; --si2:#2b3560; --dim:#2c365e; --off:#3b4672;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.28);
+  --cap-sh:0 1px 3px rgba(0,0,0,.4);
+  --panel:#131930; --sunk:#192040; --rule:#262f55; --rule-soft:rgba(160,180,240,.10);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#080c19; --bg2:#0d1226; --glow:rgba(255,196,67,.07);
+  --surface:#131930; --surface-2:#192040; --groove:#0c1124;
+  --ink:#e9edf8; --ink2:#b0b9d6; --ink3:#7f8ab0;
+  --line:#262f55; --line-soft:rgba(160,180,240,.10);
+  --e:#ffc443; --e-soft:#3d3014; --ok:#4fd1a5; --bad:#ff6b5f;
+  --wl:#ff6b5f; --bl:#5a92ff; --blb:#a98bff; --chg:#ffc443; --sa:#f472b6;
+  --si:#232c50; --si2:#2b3560; --dim:#2c365e; --off:#3b4672;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.28);
+  --cap-sh:0 1px 3px rgba(0,0,0,.4);
+  --panel:#131930; --sunk:#192040; --rule:#262f55; --rule-soft:rgba(160,180,240,.10);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;
+  background:radial-gradient(1000px 560px at 88% -14%, var(--glow) 0%, transparent 62%),
+             linear-gradient(180deg, var(--bg2) 0%, var(--bg) 60%);
+  background-color:var(--bg); background-attachment:fixed;
+  color:var(--ink);
+  font-family:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  font-size:15px;line-height:1.6;
+  word-break:keep-all;overflow-wrap:break-word;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 18px 56px}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:none}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:8px}
+
+/* ---- surfaces ---- */
+.card,.steps{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  min-width:0;
+}
+/* ---- grooves: segmented controls ---- */
+.ops,.tbar,.modes{
+  display:flex;align-items:center;
+  background:var(--groove);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:4px;gap:3px;
+}
+.ops{flex-wrap:wrap}
+
+/* ---- sticky step bar ---- */
+.sbar{position:fixed;top:0;left:0;right:0;z-index:40;opacity:0;transform:translateY(-110%);
+  transition:transform .22s ease,opacity .22s ease;pointer-events:none;
+  background:var(--surface);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.sbar.on{opacity:1;transform:none;pointer-events:auto}
+.sbar-in{max-width:1180px;margin:0 auto;padding:6px 18px;display:flex;align-items:center;gap:10px}
+.sb-no{width:24px;height:24px;border-radius:50%;border:1px solid var(--ink);color:var(--ink);
+  font-family:var(--mono);font-size:10.5px;display:grid;place-items:center;flex:0 0 auto;cursor:pointer}
+.sb-tt{min-width:0;flex:1;display:flex;align-items:baseline;gap:9px}
+.sb-tt b{font-family:var(--display);font-size:13.5px;font-weight:700;letter-spacing:-.03em;white-space:nowrap;flex:0 0 auto}
+.sb-tt span{font-size:11.5px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-pill{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:2px 8px;border-radius:999px;
+  border:1px solid currentColor;flex:0 0 auto}
+.sbar .tbar{padding:3px;border-radius:11px}
+.sbar .tb{width:30px;height:26px}
+.sb-prog{height:3px;background:var(--groove)}
+.sb-prog u{display:block;height:100%;background:var(--ink2);width:0}
+@media (max-width:680px){ .sb-tt span{display:none} .sbar-in{padding:6px 12px;gap:8px} }
+
+.byline{text-align:right;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  color:var(--ink3);margin:0 2px 10px 0}
+
+/* ---- header ---- */
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 24px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.brand{display:flex;gap:16px;align-items:center;min-width:0}
+.brand>div{min-width:0}
+.mark{width:54px;height:54px;flex:0 0 auto}
+.eyebrow{display:flex;align-items:center;gap:10px;font-family:var(--mono);
+  font-size:10.5px;letter-spacing:.1em;color:var(--ink3);margin-bottom:8px}
+.eyebrow::after{content:"";flex:1;min-width:48px;height:1px;background:var(--line-soft)}
+h1{font-family:var(--display);font-size:38px;font-weight:800;letter-spacing:-.05em;margin:0;line-height:1.2;text-wrap:balance}
+h1 em{font-style:normal;font-family:var(--mono);font-size:.58em;font-weight:500;
+  letter-spacing:-.01em;color:var(--ink3);vertical-align:.2em}
+.sub{font-family:var(--mono);font-size:11.5px;color:var(--ink3);margin-top:8px;letter-spacing:.01em}
+.specs{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px 18px;font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.specs b{display:block;font-weight:500;color:var(--ink);font-size:13.5px;letter-spacing:-.01em}
+.modes{align-self:flex-end;border-radius:999px;padding:3px}
+.md{width:32px;height:26px;display:grid;place-items:center;border-radius:999px;color:var(--ink3);border:1px solid transparent}
+.md svg{width:14px;height:14px;fill:currentColor}
+.md:hover{color:var(--ink2)}
+.md[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:var(--cap-sh)}
+
+/* ---- controls ---- */
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0 12px}
+.op{
+  padding:7px 15px;border-radius:10px;border:1px solid transparent;
+  font-size:13.5px;font-weight:500;letter-spacing:-.01em;color:var(--ink2);
+  transition:background .16s,color .16s,box-shadow .16s;
+}
+.op:hover{color:var(--ink)}
+.op[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:var(--cap-sh)}
+.spacer{flex:1 1 12px}
+.tb{width:34px;height:30px;display:grid;place-items:center;border-radius:10px;color:var(--ink2);transition:background .15s,color .15s}
+.tb:hover{background:var(--surface);color:var(--ink);box-shadow:var(--cap-sh)}
+.tb svg{width:15px;height:15px;fill:currentColor}
+.speed{display:flex;gap:2px;margin-left:5px;padding-left:6px;border-left:1px solid var(--line)}
+.sp{padding:5px 9px;font-family:var(--mono);font-size:11.5px;border-radius:9px;color:var(--ink3)}
+.sp[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--cap-sh)}
+
+/* ---- step strip ---- */
+.steps{overflow:hidden}
+.chips{display:flex;flex-wrap:wrap;gap:3px;padding:10px 12px;border-bottom:1px solid var(--line-soft);background:var(--surface-2)}
+.chip{
+  display:flex;align-items:center;gap:6px;padding:5px 11px 5px 6px;border-radius:9px;
+  font-size:12.5px;color:var(--ink3);white-space:nowrap;
+  border:1px solid transparent;transition:background .15s,color .15s,box-shadow .15s;
+}
+.chip .n{font-family:var(--mono);font-size:10.5px;width:18px;height:18px;display:grid;place-items:center;
+  border:1px solid var(--line);border-radius:50%;color:var(--ink3)}
+.chip.done{color:var(--ink2)}
+.chip.done .n{border-color:var(--ok);color:var(--ok)}
+.chip.now{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:var(--cap-sh);font-weight:500}
+.chip.now .n{border-color:var(--ink);color:var(--ink)}
+.chip:not(.now):hover{color:var(--ink)}
+.chip .arrow{color:var(--ink3);opacity:.45;margin-left:3px}
+.chip.now .arrow{display:none}
+.narr{padding:13px 16px;display:flex;gap:15px;align-items:flex-start;min-height:80px}
+.narr .no{font-family:var(--mono);font-size:28px;line-height:1;color:var(--ink3);min-width:34px;padding-top:2px}
+#stepTitle{font-family:var(--display);font-weight:700;font-size:16.5px;letter-spacing:-.025em;margin:0 0 4px;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;line-height:1.35}
+.cmd{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.04em;
+  padding:2px 8px;border-radius:999px;border:1px solid currentColor;flex:0 0 auto}
+#stepDesc{margin:0;color:var(--ink2);font-size:13.5px;max-width:86ch}
+
+/* ---- stage ---- */
+.stage{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr) 214px;gap:12px;margin-top:12px;align-items:stretch}
+.readout{display:flex;flex-direction:column}
+.readout .inner{flex:1;display:flex;flex-direction:column;justify-content:space-between;gap:14px}
+.bottom{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:12px;margin-top:12px;align-items:stretch}
+.card{padding:14px}
+.card h2{font-family:var(--display);margin:0 0 2px;font-size:13.5px;font-weight:700;color:var(--ink);letter-spacing:-.02em}
+.card .hint{margin:0 0 8px;font-size:11.5px;color:var(--ink3);line-height:1.5}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.legend{display:grid;gap:5px;margin-top:8px;padding-top:9px;border-top:1px solid var(--line-soft);font-size:11.5px;color:var(--ink2)}
+.legend div{display:flex;gap:7px;align-items:baseline}
+.legend i{width:10px;height:10px;border-radius:3px;flex:0 0 auto;transform:translateY(1px)}
+.legend span{color:var(--ink3)}
+
+/* ---- readout ---- */
+.meter{margin-bottom:11px}
+.meter .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink2);gap:8px}
+.meter .v{font-family:var(--mono);font-size:13px;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+.bar{position:relative;height:6px;background:var(--groove);border:1px solid var(--line-soft);border-radius:4px;margin-top:5px;overflow:hidden}
+.bar u{position:absolute;left:0;top:0;bottom:0;border-radius:4px;display:block}
+.bar b{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--bad);border-radius:1px}
+.dvbox{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:12px;padding:9px 11px;margin:12px 0}
+.dvbox .k{font-size:11.5px;color:var(--ink3)}
+.dvbox .val{font-family:var(--mono);font-size:19px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.params{border-top:1px solid var(--line-soft);padding-top:9px;font-family:var(--mono);font-size:11px;
+  color:var(--ink3);display:grid;gap:3px}
+.params div{display:flex;justify-content:space-between;gap:8px}
+.params span{color:var(--ink2);white-space:nowrap}
+
+footer{margin-top:18px;font-size:11.5px;color:var(--ink3);display:flex;flex-wrap:wrap;gap:6px 18px;line-height:1.7}
+
+@media (max-width:1000px){
+  .stage{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
+  .readout{grid-column:1 / -1}
+  .readout .inner{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 22px}
+  .bottom{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:680px){
+  .wrap{padding:16px 12px 44px}
+  .stage{grid-template-columns:minmax(0,1fr)}
+  .specs{order:3;width:100%;margin-left:0;flex-wrap:wrap;gap:14px}
+  .modes{order:4;margin-left:auto}
+  h1{font-size:28px}
+  .mark{width:42px;height:42px}
+  .sub{font-size:10.5px}
+  .narr .no{display:none}
+  .ops{display:grid;grid-template-columns:1fr 1fr;width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  .op,.tb,.chip,.sbar{transition:none}
+}
+</style>
+</head>
+<body>
+<div class="sbar" id="sbar">
+  <div class="sbar-in">
+    <button class="sb-no" id="sbNo" title="맨 위로" aria-label="맨 위로">1</button>
+    <div class="sb-tt"><b id="sbChip">Precharge</b><span id="sbTitle">Precharge 상태에서 대기</span></div>
+    <span class="sb-pill" id="sbPill">IDLE</span>
+    <div class="tbar">
+      <button class="tb" id="sbPrev" title="이전 단계" aria-label="이전 단계"><svg viewBox="0 0 16 16"><path d="M4 2h2v12H4zM13 2v12L6 8z"/></svg></button>
+      <button class="tb" id="sbPlay" title="재생 / 일시정지" aria-label="재생 또는 일시정지"><svg viewBox="0 0 16 16"><path id="sbPlayIcon" d="M4 2l9 6-9 6z"/></svg></button>
+      <button class="tb" id="sbNext" title="다음 단계" aria-label="다음 단계"><svg viewBox="0 0 16 16"><path d="M10 2h2v12h-2zM3 2l7 6-7 6z"/></svg></button>
+    </div>
+  </div>
+  <div class="sb-prog"><u id="sbBar"></u></div>
+</div>
+
+<div class="wrap">
+
+<div class="byline">made by june</div>
+
+<header>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 56 56" aria-hidden="true"><line x1="28" y1="3" x2="28" y2="26" stroke="var(--bl)" stroke-width="3" stroke-linecap="round"/><line x1="6" y1="32" x2="50" y2="32" stroke="var(--wl)" stroke-width="3" stroke-linecap="round"/><rect x="21" y="23" width="14" height="4" rx="2" fill="var(--wl)" opacity=".5"/><line x1="38" y1="26" x2="38" y2="40" stroke="var(--ink3)" stroke-width="2" stroke-linecap="round"/><line x1="29" y1="40" x2="47" y2="40" stroke="var(--chg)" stroke-width="3" stroke-linecap="round"/><line x1="29" y1="47" x2="47" y2="47" stroke="var(--chg)" stroke-width="3" stroke-linecap="round"/><circle cx="28" cy="16" r="2.6" fill="var(--chg)"/></svg>
+    <div><div class="eyebrow">SEMICONDUCTOR · MEMORY</div>
+    <h1>DRAM <em>1T1C</em> 셀 동작</h1>
+    <div class="sub">read · write · refresh sequence — bit line, word line, access transistor, storage capacitor</div></div>
+  </div>
+  <div class="specs">
+    <div>셀 용량<b id="sCs">8 fF</b></div>
+    <div>BL 기생<b id="sCbl">25 fF</b></div>
+    <div>VDD<b>1.1 V</b></div>
+    <div>VPP<b>2.5 V</b></div>
+  </div>
+  <div class="modes" id="modes" role="group" aria-label="테마 전환">
+    <button class="md" data-m="light" title="라이트 모드" aria-label="라이트 모드" aria-pressed="false"><svg viewBox="0 0 16 16"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-9.6a.7.7 0 0 1 .7.7v1a.7.7 0 0 1-1.4 0v-1a.7.7 0 0 1 .7-.7zm0 11.8a.7.7 0 0 1 .7.7v1a.7.7 0 0 1-1.4 0v-1a.7.7 0 0 1 .7-.7zM1.4 8a.7.7 0 0 1 .7-.7h1a.7.7 0 0 1 0 1.4h-1a.7.7 0 0 1-.7-.7zm11.5 0a.7.7 0 0 1 .7-.7h1a.7.7 0 0 1 0 1.4h-1a.7.7 0 0 1-.7-.7zM3.3 3.3a.7.7 0 0 1 1 0l.7.7a.7.7 0 1 1-1 1l-.7-.7a.7.7 0 0 1 0-1zm7.7 7.7a.7.7 0 0 1 1 0l.7.7a.7.7 0 0 1-1 1l-.7-.7a.7.7 0 0 1 0-1zm1.7-7.7a.7.7 0 0 1 0 1l-.7.7a.7.7 0 1 1-1-1l.7-.7a.7.7 0 0 1 1 0zM5 11a.7.7 0 0 1 0 1l-.7.7a.7.7 0 0 1-1-1l.7-.7a.7.7 0 0 1 1 0z"/></svg></button>
+    <button class="md" data-m="dark" title="다크 모드" aria-label="다크 모드" aria-pressed="false"><svg viewBox="0 0 16 16"><path d="M13.3 9.6A5.6 5.6 0 0 1 6.4 2.7a.6.6 0 0 0-.8-.7 6.8 6.8 0 1 0 8.4 8.4.6.6 0 0 0-.7-.8z"/></svg></button>
+  </div>
+</header>
+
+<div class="controls">
+  <div id="ops" class="ops"></div>
+  <div class="spacer"></div>
+  <div class="tbar">
+    <button class="tb" id="btnPrev" title="이전 단계" aria-label="이전 단계"><svg viewBox="0 0 16 16"><path d="M4 2h2v12H4zM13 2v12L6 8z"/></svg></button>
+    <button class="tb" id="btnPlay" title="재생 / 일시정지" aria-label="재생 또는 일시정지"><svg viewBox="0 0 16 16"><path id="playIcon" d="M4 2l9 6-9 6z"/></svg></button>
+    <button class="tb" id="btnNext" title="다음 단계" aria-label="다음 단계"><svg viewBox="0 0 16 16"><path d="M10 2h2v12h-2zM3 2l7 6-7 6z"/></svg></button>
+    <button class="tb" id="btnReset" title="처음부터" aria-label="처음부터"><svg viewBox="0 0 16 16"><path d="M8 2.5A5.5 5.5 0 1 0 13.5 8h-1.6A3.9 3.9 0 1 1 8 4.1V6.6L11.6 3.5 8 .4z"/></svg></button>
+    <div class="speed" id="speed"></div>
+    <div class="speed"><button class="sp" id="btnSbar" aria-pressed="true" title="스크롤하면 상단에 단계 바 표시">상단 바</button></div>
+  </div>
+</div>
+
+<section class="steps" id="steps">
+  <div class="chips" id="chips"></div>
+  <div class="narr">
+    <div class="no" id="stepNo">1</div>
+    <div>
+      <p id="stepTitle"><span class="cmd" id="stepCmd">IDLE</span><span id="stepTitleText">Precharge 상태</span></p>
+      <p id="stepDesc"></p>
+    </div>
+  </div>
+</section>
+
+<div class="stage">
+
+  <!-- ============ CIRCUIT ============ -->
+  <figure class="card" style="margin:0">
+    <h2>셀 회로 · folded bit line</h2>
+    <p class="hint">선택된 셀은 왼쪽 WL n에 달려 있고, /BL은 인접 array의 기준선으로 쓰인다.</p>
+    <svg id="cir" viewBox="0 0 580 470" role="img" aria-label="DRAM 셀 회로도">
+      <!-- bit lines -->
+      <line id="bl"  x1="230" y1="36" x2="230" y2="418" stroke-linecap="round"/>
+      <line id="blb" x1="350" y1="36" x2="350" y2="418" stroke-linecap="round"/>
+
+      <!-- word lines -->
+      <line id="wl0" x1="40"  y1="300" x2="330" y2="300" stroke-linecap="round"/>
+      <line id="wlm" x1="366" y1="300" x2="560" y2="300" stroke-linecap="round"/>
+
+      <!-- selected cell -->
+      <g id="cellL">
+        <line class="lead" x1="230" y1="283" x2="252" y2="283"/>
+        <line class="lead" x1="296" y1="283" x2="318" y2="283"/>
+        <line class="lead" x1="318" y1="283" x2="318" y2="330"/>
+        <rect id="chan" x="252" y="279.5" width="44" height="6" rx="2"/>
+        <line id="gate0" x1="248" y1="300" x2="300" y2="300" stroke-linecap="round"/>
+        <line class="plate" x1="292" y1="330" x2="344" y2="330"/>
+        <rect id="capFill" x="293" y="331" width="50" height="18" rx="1"/>
+        <line class="plate" x1="292" y1="350" x2="344" y2="350"/>
+        <line class="lead" x1="318" y1="350" x2="318" y2="378"/>
+        <line class="plate2" x1="302" y1="378" x2="334" y2="378"/>
+        <circle class="node" cx="230" cy="283" r="3.6"/>
+      </g>
+
+      <!-- unselected cell on /BL -->
+      <g id="cellR" opacity="0.38">
+        <line class="lead" x1="350" y1="283" x2="372" y2="283"/>
+        <line class="lead" x1="416" y1="283" x2="438" y2="283"/>
+        <line class="lead" x1="438" y1="283" x2="438" y2="330"/>
+        <rect class="chanoff" x="372" y="279.5" width="44" height="6" rx="2"/>
+        <line class="gateoff" x1="368" y1="300" x2="420" y2="300" stroke-linecap="round"/>
+        <line class="plate" x1="412" y1="330" x2="464" y2="330"/>
+        <line class="plate" x1="412" y1="350" x2="464" y2="350"/>
+        <line class="lead" x1="438" y1="350" x2="438" y2="378"/>
+        <line class="plate2" x1="422" y1="378" x2="454" y2="378"/>
+        <circle class="node" cx="350" cy="283" r="3.6"/>
+      </g>
+
+      <!-- blocks -->
+      <rect id="saBox" class="blk" x="195" y="36" width="190" height="52" rx="3"/>
+      <text class="blkT" x="290" y="58">Sense amplifier</text>
+      <text class="blkS" x="290" y="75">BLSA · SAN / SAP latch</text>
+
+      <rect id="eqBox" class="blk" x="195" y="100" width="190" height="36" rx="3"/>
+      <text class="blkT" x="290" y="122">Precharge · EQ  (VDD/2)</text>
+
+      <rect id="csBox" class="blk" x="195" y="418" width="190" height="40" rx="3"/>
+      <text class="blkT" x="290" y="443">Write driver · CSL → DQ</text>
+
+      <!-- labels -->
+      <text class="lb" x="222" y="160" text-anchor="end">BL</text>
+      <text class="lb" x="358" y="160">/BL</text>
+      <text id="tBL"  class="mono" x="222" y="177" text-anchor="end">0.550 V</text>
+      <text id="tBLB" class="mono" x="358" y="177">0.550 V</text>
+      <text class="lb" x="44" y="292">WL n</text>
+      <text id="tWL" class="mono" x="44" y="319">−0.20 V</text>
+      <text class="lb" x="480" y="292">WL m · 비선택</text>
+      <text class="lb" x="318" y="318" text-anchor="middle">Cs</text>
+      <text id="tCELL" class="mono" x="318" y="398" text-anchor="middle">1.100 V</text>
+      <text class="lb2" x="318" y="412" text-anchor="middle">storage node</text>
+
+      <!-- charge path (hidden) -->
+      <path id="path2" d="M230,283 L252,283 L296,283 L318,283 L318,336" fill="none" stroke="none"/>
+      <g id="dots2"></g>
+    </svg>
+    <div class="legend">
+      <div><i style="background:var(--wl)"></i>Word line — VPP로 부스팅되어 access transistor를 연다</div>
+      <div><i style="background:var(--bl)"></i>Bit line — VDD/2에서 출발해 ΔV를 싣는다</div>
+      <div><i style="background:var(--chg)"></i>전하 이동 — conventional current(+) 방향으로 표시</div>
+    </div>
+  </figure>
+
+  <!-- ============ 3D ============ -->
+  <figure class="card" style="margin:0">
+    <h2>셀 구조 · buried word line 6F²</h2>
+    <p class="hint">6F² 배치. active가 BL 기준 20° 기울어 양 끝의 storage node가 서로 어긋나고, 가운데에 BL contact가 놓인다.</p>
+    <svg id="sol" viewBox="0 0 580 470" role="img" aria-label="DRAM 셀 3차원 구조"></svg>
+    <div class="legend">
+      <div><i style="background:var(--bl)"></i>Bit line<span>— active 위를 가로지르는 금속선</span></div>
+      <div><i style="background:var(--wl)"></i>Buried word line<span>— 기판에 매립된 게이트. 점선 구간은 active 아래를 지난다</span></div>
+      <div><i style="background:var(--chg)"></i>Capacitor<span>— TiN / ZrO₂ / TiN, storage node contact 위에 적층</span></div>
+      <div><i style="background:var(--si)"></i>Si substrate · STI<span>— active를 분리</span></div>
+    </div>
+  </figure>
+
+  <!-- ============ READOUT ============ -->
+  <aside class="card readout" style="margin:0">
+    <div class="inner">
+      <div>
+        <h2 style="margin-bottom:8px">실시간 노드 전압</h2>
+        <div class="meter"><div class="row"><span>WL n</span><span class="v" id="mWL">−0.20 V</span></div><div class="bar"><u id="bWL"></u></div></div>
+        <div class="meter"><div class="row"><span>BL</span><span class="v" id="mBL">0.550 V</span></div><div class="bar"><b style="left:50%"></b><u id="bBL"></u></div></div>
+        <div class="meter"><div class="row"><span>/BL</span><span class="v" id="mBLB">0.550 V</span></div><div class="bar"><b style="left:50%"></b><u id="bBLB"></u></div></div>
+        <div class="meter"><div class="row"><span>Storage node</span><span class="v" id="mCELL">1.100 V</span></div><div class="bar"><b style="left:50%"></b><u id="bCELL"></u></div></div>
+      </div>
+      <div>
+        <div class="dvbox">
+          <div class="k">ΔV<sub>BL</sub> = BL − VDD/2</div>
+          <div class="val" id="mDV">+0 mV</div>
+          <div class="k" id="mQ">저장 전하 Q = 8.80 fC</div>
+        </div>
+        <div class="params">
+          <div><span>Cs / (Cs + C<sub>BL</sub>)</span>0.242</div>
+          <div><span>이론 ΔV</span>±133 mV</div>
+          <div><span>V<sub>PLATE</sub></span>0.55 V</div>
+          <div><span>tREF</span>64 ms</div>
+          <div><span>tREFI</span>7.8 µs</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ============ TIMING + ARRAY ============ -->
+<div class="bottom">
+  <figure class="card" style="margin:0">
+    <h2>타이밍 다이어그램</h2>
+    <p class="hint">밝은 구간이 지금까지 진행한 시퀀스다. 파형 아래 브래킷은 커맨드 간 지켜야 하는 타이밍 파라미터이고, 지금 지나고 있는 구간이 진하게 표시된다.</p>
+    <svg id="tl" viewBox="0 0 1000 404" role="img" aria-label="동작 타이밍 다이어그램"></svg>
+  </figure>
+  <figure class="card" style="margin:0">
+    <h2>Array 뷰</h2>
+    <p class="hint">WL 하나가 열리면 그 row의 셀 전부가 함께 sensing·restore된다.</p>
+    <svg id="arr" viewBox="0 0 200 186" role="img" aria-label="셀 어레이 미니맵"></svg>
+    <div class="legend">
+      <div><i style="background:var(--wl)"></i>열린 WL<span>— row 전체 동시 동작</span></div>
+      <div><i style="background:var(--bl)"></i>CSL이 고른 column<span>— DQ로 나가는 건 이것뿐</span></div>
+    </div>
+  </figure>
+</div>
+
+<footer>
+  <span>Cs = 8 fF, C<sub>BL</sub> = 25 fF, VDD = 1.1 V 기준으로 계산한 값</span>
+  <span>전하 이동은 conventional current(+) 기준</span>
+  <span>시간 축은 단계 이해를 위한 것으로 실제 tRCD·tRAS 비율과 다르다</span>
+</footer>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------- constants ---------------- */
+var VDD=1.1, VH=0.55, VPP=2.5, VBB=-0.2, CS=8, CBL=25;
+var RATIO = CS/(CS+CBL);
+function dv(vc){ return RATIO*(vc-VH); }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function ease(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+function lerp(a,b,t){ return a+(b-a)*t; }
+
+/* ---------------- theme colors ---------------- */
+var C={};
+function readColors(){
+  var cs=getComputedStyle(document.documentElement);
+  ["wl","bl","blb","chg","sa","dim","off","ink","ink2","ink3","panel","sunk","rule","si","si2"].forEach(function(k){
+    C[k]=cs.getPropertyValue("--"+k).trim();
+  });
+}
+function hex(c){
+  c=(c||"#888888").trim();
+  if(c.charAt(0)!=="#"){
+    var m=c.match(/-?\d+(\.\d+)?/g);
+    if(m&&m.length>=3) return [+m[0],+m[1],+m[2]];
+    return [136,136,136];
+  }
+  c=c.replace("#","");
+  if(c.length===3) c=c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
+  return [parseInt(c.slice(0,2),16),parseInt(c.slice(2,4),16),parseInt(c.slice(4,6),16)];
+}
+function mix(a,b,t){
+  t=clamp(t,0,1);
+  var A=hex(a),B=hex(b);
+  return "rgb("+Math.round(lerp(A[0],B[0],t))+","+Math.round(lerp(A[1],B[1],t))+","+Math.round(lerp(A[2],B[2],t))+")";
+}
+
+/* ---------------- sequences ---------------- */
+function S(prev,over){ var o={},k; for(k in prev) o[k]=prev[k]; for(k in over) o[k]=over[k]; return o; }
+
+function buildRead(one){
+  var vc = one?VDD:0, shared = VH+dv(vc), sign = one?"+":"−";
+  var cur = {wl:VBB,bl:VH,blb:VH,cell:vc,sa:0,eq:1,cs:0,flow:0};
+  var st=[], init=cur;
+  function add(cmd,chip,title,desc,over,dur){ cur=S(cur,over); st.push({cmd:cmd,chip:chip,title:title,desc:desc,sig:cur,dur:dur}); }
+  add("IDLE","Precharge","Precharge 상태에서 대기",
+    "Equalizer가 BL과 /BL을 둘 다 VBLEQ = VDD/2 = 0.55 V로 묶어 둔다. 셀은 데이터 '"+one+"'을 전하 형태로 들고 있다.",
+    {flow:0},1500);
+  add("ACT","EQ off","Equalizer를 끊어 BL을 floating 시킨다",
+    "ACT 커맨드가 들어오면 먼저 EQ를 열어 BL 쌍을 0.55 V인 채로 띄운다. 곧 실릴 수십 mV를 잃지 않기 위한 준비다.",
+    {eq:0,flow:0},1300);
+  add("ACT","WL 활성화","Word line을 VPP까지 올린다",
+    "선택된 WL만 2.5 V로 부스팅한다. VDD + Vt 이상이어야 transistor가 전압 손실 없이 full level을 넘긴다.",
+    {wl:VPP,flow:0},1600);
+  add("ACT","Access Tr ON","Access transistor가 켜진다",
+    "게이트 아래 채널이 형성되면서 storage node와 BL이 하나의 노드로 이어진다.",
+    {flow: one?-1:1},1300);
+  add("ACT","Charge sharing","Charge sharing으로 ΔV가 생긴다",
+    "Cs(8 fF)와 CBL(25 fF)이 전하를 나눠 갖는다. ΔV = Cs/(Cs+CBL) × VDD/2 = "+sign+"133 mV. 셀 전압도 BL과 같아지므로 읽기는 파괴적(destructive)이다.",
+    {bl:shared,cell:shared,flow: one?-1:1},2300);
+  add("ACT","Sense amp","Sense amplifier가 ΔV를 증폭한다",
+    "BLSA가 BL과 /BL의 차이를 latch해 한쪽은 VDD, 반대쪽은 VSS로 full swing 시킨다. 이 133 mV가 sensing margin의 전부다.",
+    {sa:1,bl: one?VDD:0, blb: one?0:VDD, flow:0},1800);
+  add("ACT","Restore","증폭된 레벨을 셀에 다시 쓴다",
+    "WL이 아직 열려 있으므로 BL 레벨이 그대로 셀에 복원된다. 이 write-back 시간이 tRAS의 대부분을 차지한다.",
+    {cell: one?VDD:0, flow: one?1:-1},1900);
+  add("RD","Data out","Column select로 DQ에 내보낸다",
+    "RD 커맨드가 선택한 column의 CSL만 열려 BL 쌍이 LIO를 거쳐 DQ로 연결된다. sensing은 이미 끝났으므로 여기서는 전달만 한다.",
+    {cs:1,flow:0},1400);
+  add("PRE","WL off · PRE","WL을 닫고 다시 precharge 한다",
+    "WL을 VBB로 내려 셀을 고립시키고, equalizer를 켜 BL 쌍을 VDD/2로 되돌린다. 이 회복 구간이 tRP다.",
+    {wl:VBB,eq:1,sa:0,cs:0,bl:VH,blb:VH,flow:0},1800);
+  return {init:init,steps:st};
+}
+
+function buildWrite(one){
+  var old = one?0:VDD, tgt = one?VDD:0, shared = VH+dv(old);
+  var dvOld = Math.round(dv(old)*1000);
+  var cur = {wl:VBB,bl:VH,blb:VH,cell:old,sa:0,eq:1,cs:0,flow:0};
+  var st=[], init=cur;
+  function add(cmd,chip,title,desc,over,dur){ cur=S(cur,over); st.push({cmd:cmd,chip:chip,title:title,desc:desc,sig:cur,dur:dur}); }
+  add("IDLE","Precharge","Precharge 상태에서 대기",
+    "BL 쌍은 VDD/2, 셀에는 이전 데이터 '"+(one?0:1)+"'이 남아 있다. DRAM은 닫힌 row에 바로 쓸 수 없어서, 쓰기도 ACT → WR → PRE 순서를 그대로 밟는다.",
+    {flow:0},1400);
+  add("ACT","EQ off","Equalizer를 끊는다",
+    "ACT 커맨드의 시작. 여기부터 sense amp가 latch될 때까지는 읽기와 글자 그대로 동일한 동작이다.",
+    {eq:0,flow:0},1100);
+  add("ACT","WL 활성화","Word line을 VPP까지 올린다",
+    "쓰기에서도 WL을 2.5 V까지 올려야 한다. 나중에 Vt 손실 없이 full VDD를 셀에 밀어 넣기 위한 조건이다.",
+    {wl:VPP,flow:0},1500);
+  add("ACT","Charge sharing","ACT에 딸려 오는 charge sharing",
+    "WL을 여는 순간 그 row의 모든 셀에서 전하 분배가 일어난다. 쓰기 동작의 일부가 아니라 row를 여는 대가이며, 앞으로 쓸 데이터와 무관하게 기존 데이터가 ΔV = "+(dvOld>=0?"+":"−")+Math.abs(dvOld)+" mV로 BL에 실린다.",
+    {bl:shared,cell:shared,flow: one?1:-1},1800);
+  add("ACT","Sense amp","기존 데이터가 latch된다",
+    "BLSA가 먼저 기존 데이터를 full swing으로 확정한다. 이 sensing이 끝나야(tRCD) 비로소 WR 커맨드를 받을 수 있다.",
+    {sa:1,bl: one?0:VDD, blb: one?VDD:0, flow:0},1600);
+  add("WR","Write driver","Write driver가 latch를 뒤집는다",
+    "WR 커맨드는 선택된 column의 CSL만 연다. SA보다 구동력이 훨씬 큰 write driver가 BL 쌍을 "+(one?"VDD / VSS":"VSS / VDD")+"로 끌어 latch까지 새 데이터로 반전시킨다. 열리지 않은 나머지 column은 latch된 기존 데이터를 그대로 유지한다.",
+    {cs:1,bl:tgt,blb: one?0:VDD, flow:0},1700);
+  add("WR","Charge transfer","뒤집힌 BL이 셀을 다시 채운다",
+    (one ? "BL이 VDD가 되면 열려 있는 access transistor를 통해 셀 노드가 BL을 따라 올라간다. WL이 VPP이므로 Vt만큼 깎이지 않고 full 1.1 V까지 채워진다."
+         : "BL이 VSS로 내려가면서 셀에 있던 전하가 채널을 통해 빠져나가고 storage node는 0 V가 된다.")
+    +" 쓸 데이터가 기존 데이터와 같았다면 BL을 뒤집을 일이 없어 이 구간은 restore와 구분되지 않는다.",
+    {cell:tgt, flow: one?1:-1},2000);
+  add("PRE","WL off","PRE가 WL을 닫는다",
+    "WL을 VBB로 내려 Q = Cs × V = "+(one?"8.80":"0.00")+" fC 상태로 셀을 고립시킨다. 마지막 write 데이터부터 PRE까지 tWR을 지켜야 셀이 full level에 도달한 뒤에 닫힌다.",
+    {wl:VBB,flow:0},1500);
+  add("PRE","Precharge","BL을 VDD/2로 되돌린다",
+    "CSL과 sense amp를 끄고 equalizer를 켠다. 같은 row에 계속 쓰는 동안에는 여기까지 오지 않고 6~7단계만 반복한다. charge sharing은 write마다가 아니라 ACT당 한 번뿐이다.",
+    {eq:1,sa:0,cs:0,bl:VH,blb:VH,flow:0},1600);
+  return {init:init,steps:st};
+}
+
+function buildRefresh(){
+  var leak = 0.72, shared = VH+dv(leak);
+  var cur = {wl:VBB,bl:VH,blb:VH,cell:VDD,sa:0,eq:1,cs:0,flow:0};
+  var st=[], init=cur;
+  function add(cmd,chip,title,desc,over,dur){ cur=S(cur,over); st.push({cmd:cmd,chip:chip,title:title,desc:desc,sig:cur,dur:dur}); }
+  add("IDLE","Leakage","시간이 지나며 전하가 샌다",
+    "Junction leakage, GIDL, access transistor의 sub-threshold leakage로 storage node 전압이 1.1 V에서 서서히 떨어진다.",
+    {cell:leak,flow:0},2400);
+  add("REF","REF 커맨드","Auto-refresh가 들어온다",
+    "tREFI 7.8 µs마다 REF 커맨드가 오고, 내부 row counter가 복원할 word line을 하나씩 지정한다. 전체는 tREF 64 ms 안에 한 바퀴 돈다.",
+    {flow:0},1400);
+  add("REF","EQ off","Equalizer를 끊는다","refresh도 내부적으로는 읽기와 똑같은 ACT 시퀀스를 따른다.",{eq:0,flow:0},1000);
+  add("REF","WL 활성화","해당 row의 WL을 연다","지정된 word line 하나가 VPP로 올라가고, 그 row에 달린 셀 전부가 동시에 복원 대상이 된다.",{wl:VPP,flow:0},1500);
+  add("REF","Charge sharing","줄어든 전하만큼 ΔV도 작다",
+    "남은 전하로는 ΔV가 +41 mV밖에 되지 않는다. retention이 나쁜 weak cell이나 VRT 셀은 여기서 sensing margin을 잃고 fail 한다.",
+    {bl:shared,cell:shared,flow:-1},2400);
+  add("REF","Sense amp","Sense amp가 다시 세운다","작은 ΔV라도 방향만 맞으면 BLSA가 VDD / VSS로 확정한다. margin 싸움이 곧 retention 특성이다.",
+    {sa:1,bl:VDD,blb:0,flow:0},1700);
+  add("REF","Restore","Full VDD로 복원한다","증폭된 BL 레벨이 셀에 다시 채워진다. refresh의 본질은 읽고 그대로 되쓰는 것이다.",
+    {cell:VDD,flow:1},1900);
+  add("PRE","WL off · PRE","WL을 닫고 다음 row로 넘어간다",
+    "CSL은 열리지 않으므로 데이터가 DQ로 나가지 않는다. 이 사이클을 모든 row에 대해 반복한다.",
+    {wl:VBB,eq:1,sa:0,bl:VH,blb:VH,flow:0},1700);
+  return {init:init,steps:st};
+}
+
+var OPS = {
+  read1:{label:"Read 1", build:function(){return buildRead(1);}},
+  read0:{label:"Read 0", build:function(){return buildRead(0);}},
+  write1:{label:"Write 1", build:function(){return buildWrite(1);}},
+  write0:{label:"Write 0", build:function(){return buildWrite(0);}},
+  refresh:{label:"Refresh", build:function(){return buildRefresh();}}
+};
+var ORDER=["read1","read0","write1","write0","refresh"];
+
+/* ---------------- state (single source of truth) ---------------- */
+var state = { key:null, init:null, steps:[], idx:0, elapsed:0, playing:false, settling:false, speed:1, entry:null, cur:null, phase:0 };
+
+/* ---------------- 3D scene ---------------- */
+var SVGNS="http://www.w3.org/2000/svg";
+function el(tag,attrs){ var e=document.createElementNS(SVGNS,tag); for(var k in attrs) e.setAttribute(k,attrs[k]); return e; }
+function isoPt(x,y,z){ return [300+(x-y)*0.88, 250+(x+y)*0.5-z]; }
+function P(x,y,z){ var p=isoPt(x,y,z); return p[0].toFixed(1)+","+p[1].toFixed(1); }
+function boxFaces(x,y,z,w,d,h){
+  return {
+    top:"M"+P(x,y,z+h)+" L"+P(x+w,y,z+h)+" L"+P(x+w,y+d,z+h)+" L"+P(x,y+d,z+h)+" Z",
+    right:"M"+P(x+w,y,z+h)+" L"+P(x+w,y,z)+" L"+P(x+w,y+d,z)+" L"+P(x+w,y+d,z+h)+" Z",
+    left:"M"+P(x,y+d,z+h)+" L"+P(x,y+d,z)+" L"+P(x+w,y+d,z)+" L"+P(x+w,y+d,z+h)+" Z"
+  };
+}
+var sol=document.getElementById("sol"), solParts={};
+function addBox(parent,name,dims,baseVar,opacity){
+  var f=boxFaces(dims[0],dims[1],dims[2],dims[3],dims[4],dims[5]);
+  var g=el("g",{});
+  var t=el("path",{d:f.top}), l=el("path",{d:f.left}), r=el("path",{d:f.right});
+  [t,l,r].forEach(function(p){ p.setAttribute("stroke-width","0.8"); p.setAttribute("stroke-linejoin","round"); g.appendChild(p); });
+  if(opacity!=null) g.setAttribute("opacity",opacity);
+  parent.appendChild(g);
+  solParts[name]={g:g,t:t,l:l,r:r,base:baseVar};
+  return solParts[name];
+}
+function addPath(parent,name,d,dash){
+  var p=el("path",{d:d,"stroke-width":dash?1.2:0.9,"stroke-linejoin":"round","fill-rule":"evenodd"});
+  if(dash) p.setAttribute("stroke-dasharray","5 3");
+  parent.appendChild(p);
+  solParts[name]={single:p};
+  return p;
+}
+function addSlab(parent,name,cx,cy,ang,len,wid,z0,z1){
+  var c=Math.cos(ang), s=Math.sin(ang), i;
+  function cor(u,v){ return [cx+u*c-v*s, cy+u*s+v*c]; }
+  var p=[cor(-len/2,-wid/2),cor(len/2,-wid/2),cor(len/2,wid/2),cor(-len/2,wid/2)], sides=[];
+  for(i=0;i<4;i++){
+    var a=p[i], b=p[(i+1)%4];
+    if((a[0]+b[0]+a[1]+b[1])/2 > cx+cy)
+      sides.push("M"+P(a[0],a[1],z1)+" L"+P(b[0],b[1],z1)+" L"+P(b[0],b[1],z0)+" L"+P(a[0],a[1],z0)+" Z");
+  }
+  var g=el("g",{});
+  var t=el("path",{d:"M"+p.map(function(q){return P(q[0],q[1],z1);}).join(" L")+" Z"});
+  var l=el("path",{d:sides[0]||"M0,0"});
+  var r=el("path",{d:sides[1]||"M0,0"});
+  [l,r,t].forEach(function(n){ n.setAttribute("stroke-width","0.8"); n.setAttribute("stroke-linejoin","round"); g.appendChild(n); });
+  parent.appendChild(g);
+  solParts[name]={g:g,t:t,l:l,r:r};
+  return solParts[name];
+}
+function addCyl(parent,name,cx,cy,cz,h,r){
+  var b=isoPt(cx,cy,cz), tp=isoPt(cx,cy,cz+h), ry=r*0.5;
+  var g=el("g",{});
+  var bot=el("ellipse",{cx:b[0],cy:b[1],rx:r,ry:ry});
+  var body=el("rect",{x:b[0]-r,y:tp[1],width:r*2,height:b[1]-tp[1]});
+  var fill=el("rect",{x:b[0]-r+2,y:b[1]-4,width:r*2-4,height:4});
+  var top=el("ellipse",{cx:tp[0],cy:tp[1],rx:r,ry:ry});
+  [bot,body,fill,top].forEach(function(n){ g.appendChild(n); });
+  parent.appendChild(g);
+  solParts[name]={g:g,bot:bot,body:body,fill:fill,top:top,bx:b,tx:tp,r:r,h:b[1]-tp[1]};
+  return solParts[name];
+}
+var ANG=20*Math.PI/180, ACX=110, ACY=80, ALEN=152, AWID=30;
+function rotPt(u,v){ return [ACX+u*Math.cos(ANG)-v*Math.sin(ANG), ACY+u*Math.sin(ANG)+v*Math.cos(ANG)]; }
+var ENDL=rotPt(-62,0), ENDR=rotPt(62,0);
+function bwlGhost(x0,x1){
+  var t=Math.tan(ANG), hw=(AWID/2)/Math.cos(ANG);
+  var ya=ACY+(x0-ACX)*t, yb=ACY+(x1-ACX)*t;
+  return "M"+P(x0,ya-hw,28)+" L"+P(x1,yb-hw,28)+" L"+P(x1,yb+hw,28)+" L"+P(x0,ya+hw,28)+" Z";
+}
+function buildSolid(){
+  while(sol.firstChild) sol.removeChild(sol.firstChild);
+  var root=el("g",{});
+  sol.appendChild(root);
+  addBox(root,"sub",[0,0,0,220,160,28],"si");
+  // 6F2: word lines stay orthogonal to the bit line and sit flush with the surface;
+  // only the active is tilted, so the two storage-node ends stagger apart
+  addBox(root,"bwlA",[64,0,8,22,160,20],"wl");
+  addBox(root,"bwlB",[134,0,8,22,160,20],"wlDim");
+  addSlab(root,"active",ACX,ACY,ANG,ALEN,AWID,28,50);
+  // the stretch running under the active, ghosted through it
+  addPath(root,"ghA",bwlGhost(64,86),true);
+  addPath(root,"ghB",bwlGhost(134,156),true);
+  addSlab(root,"snL",ENDL[0],ENDL[1],ANG,26,24,50,110);
+  addSlab(root,"blc",ACX,ACY,ANG,22,20,50,90);
+  addSlab(root,"snR",ENDR[0],ENDR[1],ANG,26,24,50,110);
+  addBox(root,"blbar",[0,68,90,220,24,16],"bl");
+  addCyl(root,"capL",ENDL[0],ENDL[1],110,88,17);
+  addCyl(root,"capR",ENDR[0],ENDR[1],110,88,17);
+
+  var pth=el("path",{id:"path3",fill:"none",stroke:"none",
+    d:"M"+P(ACX,ACY,98)+" L"+P(ACX,ACY,58)+" L"+P(ACX,ACY,44)+" L"+P(ENDL[0],ENDL[1],44)+
+      " L"+P(ENDL[0],ENDL[1],114)+" L"+P(ENDL[0],ENDL[1],150)});
+  root.appendChild(pth);
+  var dg=el("g",{id:"dots3"}); root.appendChild(dg);
+  return {path:pth,dots:dg};
+}
+
+/* ---------------- charge dots ---------------- */
+var NDOT=7;
+function makeDots(group,cls){
+  var arr=[];
+  for(var i=0;i<NDOT;i++){
+    var c=el("circle",{r:3.4,cx:-99,cy:-99});
+    group.appendChild(c); arr.push(c);
+  }
+  return arr;
+}
+var cir=document.getElementById("cir");
+var path2=document.getElementById("path2");
+var dots2g=document.getElementById("dots2");
+var solid=buildSolid();
+var path3=solid.path, dots3g=solid.dots;
+var dots2=makeDots(dots2g), dots3=makeDots(dots3g);
+var len2=path2.getTotalLength(), len3=path3.getTotalLength();
+
+function placeDots(dotArr,path,len,flow,phase){
+  for(var i=0;i<NDOT;i++){
+    var d=dotArr[i];
+    if(!flow){ d.setAttribute("opacity","0"); continue; }
+    var u=(phase + i/NDOT)%1;
+    var pos = flow>0 ? u : 1-u;
+    var pt=path.getPointAtLength(pos*len);
+    d.setAttribute("cx",pt.x.toFixed(1));
+    d.setAttribute("cy",pt.y.toFixed(1));
+    d.setAttribute("fill",C.chg);
+    var fade = Math.sin(u*Math.PI);
+    d.setAttribute("opacity",(0.25+0.75*fade).toFixed(2));
+  }
+}
+
+/* ---------------- array minimap ---------------- */
+var arr=document.getElementById("arr");
+var NR=8,NC=8,SELR=3,SELC=4, aRows=[],aCols=[],aCells=[],aMark=null;
+(function buildArray(){
+  var g=el("g",{}); arr.appendChild(g);
+  var x0=30,y0=18,pitch=19, r,c,x,y,ln;
+  for(c=0;c<NC;c++){
+    x=x0+c*pitch;
+    ln=el("line",{x1:x,y1:y0-9,x2:x,y2:y0+(NR-1)*pitch+11,"stroke-width":1.4,"stroke-linecap":"round"});
+    g.appendChild(ln); aCols.push(ln);
+  }
+  for(r=0;r<NR;r++){
+    y=y0+r*pitch;
+    ln=el("line",{x1:x0-13,y1:y,x2:x0+(NC-1)*pitch+9,y2:y,"stroke-width":1.4,"stroke-linecap":"round"});
+    g.appendChild(ln); aRows.push(ln);
+    aCells.push([]);
+    for(c=0;c<NC;c++){
+      var sq=el("rect",{x:x0+c*pitch-3.3,y:y-3.3,width:6.6,height:6.6,rx:1.6});
+      g.appendChild(sq); aCells[r].push(sq);
+    }
+  }
+  var ym=y0+SELR*pitch;
+  aMark=el("path",{d:"M9,"+(ym-4.5)+" L16,"+ym+" L9,"+(ym+4.5)+" Z"});
+  g.appendChild(aMark);
+})();
+function renderArray(s){
+  var nW=clamp((s.wl-VBB)/(VPP-VBB),0,1), lit=nW>0.5;
+  var isRef=(state.key==="refresh"), r,c;
+  for(r=0;r<NR;r++){
+    var sel=(r===SELR);
+    aRows[r].setAttribute("stroke", sel? mix(C.off,C.wl,nW) : C.dim);
+    aRows[r].setAttribute("stroke-width", sel? (1.4+1.8*nW).toFixed(2) : 1.1);
+    aRows[r].setAttribute("opacity", sel?1:0.45);
+    for(c=0;c<NC;c++){
+      var sq=aCells[r][c];
+      if(sel){ sq.setAttribute("fill",mix(C.dim,C.chg,nW)); sq.setAttribute("opacity",(0.3+0.7*nW).toFixed(2)); }
+      else if(isRef&&r<SELR){ sq.setAttribute("fill",C.chg); sq.setAttribute("opacity",0.4); }
+      else { sq.setAttribute("fill",C.dim); sq.setAttribute("opacity",0.45); }
+    }
+  }
+  for(c=0;c<NC;c++){
+    var on=(s.cs&&c===SELC);
+    aCols[c].setAttribute("stroke", on? C.bl : mix(C.off,C.bl,0.3*nW));
+    aCols[c].setAttribute("stroke-width", on?2.8:1.2);
+    aCols[c].setAttribute("opacity", on?1:0.5);
+  }
+  aMark.setAttribute("fill", lit? C.wl : C.ink3);
+  aMark.setAttribute("opacity", lit?1:0.5);
+}
+
+/* ---------------- rendering ---------------- */
+var $=function(id){return document.getElementById(id);};
+
+function renderCircuit(s){
+  // bit lines: 0 -> off color, VDD -> bl color
+  var nBL=clamp(s.bl/VDD,0,1), nBLB=clamp(s.blb/VDD,0,1);
+  var bl=$("bl"), blb=$("blb");
+  bl.setAttribute("stroke",mix(C.off,C.bl,nBL));
+  bl.setAttribute("stroke-width",(2.8+3.2*Math.abs(nBL-0.5)*2).toFixed(2));
+  bl.style.filter = Math.abs(s.bl-VH)>0.35 ? "drop-shadow(0 0 5px "+C.bl+")" : "none";
+  blb.setAttribute("stroke",mix(C.off,C.blb,nBLB));
+  blb.setAttribute("stroke-width",(2.8+3.2*Math.abs(nBLB-0.5)*2).toFixed(2));
+  blb.style.filter = Math.abs(s.blb-VH)>0.35 ? "drop-shadow(0 0 5px "+C.blb+")" : "none";
+
+  var nW=clamp((s.wl-VBB)/(VPP-VBB),0,1);
+  var wl=$("wl0"), gate=$("gate0");
+  var wc=mix(C.off,C.wl,nW);
+  wl.setAttribute("stroke",wc); wl.setAttribute("stroke-width",(2.6+3.4*nW).toFixed(2));
+  wl.style.filter = nW>0.5 ? "drop-shadow(0 0 6px "+C.wl+")" : "none";
+  gate.setAttribute("stroke",wc); gate.setAttribute("stroke-width",(6+3*nW).toFixed(2));
+
+  var on=clamp((s.wl-0.4)/1.0,0,1);
+  var chan=$("chan");
+  chan.setAttribute("fill",mix(C.dim,C.wl,on));
+  chan.setAttribute("opacity",(0.25+0.75*on).toFixed(2));
+
+  var f=clamp(s.cell/VDD,0,1);
+  var cf=$("capFill");
+  cf.setAttribute("fill",C.chg);
+  cf.setAttribute("opacity",(0.12+0.78*f).toFixed(2));
+  cf.setAttribute("y",(331+18*(1-f)).toFixed(1));
+  cf.setAttribute("height",Math.max(0.6,18*f).toFixed(1));
+
+  $("saBox").setAttribute("stroke", s.sa? C.sa : C.rule);
+  $("saBox").setAttribute("stroke-width", s.sa? 1.8:1);
+  $("saBox").style.filter = s.sa? "drop-shadow(0 0 7px "+C.sa+")":"none";
+  $("eqBox").setAttribute("stroke", s.eq? C.bl : C.rule);
+  $("eqBox").setAttribute("stroke-width", s.eq? 1.6:1);
+  $("csBox").setAttribute("stroke", s.cs? C.chg : C.rule);
+  $("csBox").setAttribute("stroke-width", s.cs? 1.8:1);
+
+  $("tBL").textContent=s.bl.toFixed(3)+" V";
+  $("tBLB").textContent=s.blb.toFixed(3)+" V";
+  $("tWL").textContent=(s.wl<0?"−":"")+Math.abs(s.wl).toFixed(2)+" V";
+  $("tCELL").textContent=s.cell.toFixed(3)+" V";
+  $("tBL").setAttribute("fill",mix(C.ink3,C.bl,Math.abs(nBL-0.5)*2));
+  $("tBLB").setAttribute("fill",mix(C.ink3,C.blb,Math.abs(nBLB-0.5)*2));
+  $("tWL").setAttribute("fill",mix(C.ink3,C.wl,nW));
+  $("tCELL").setAttribute("fill",mix(C.ink3,C.chg,f));
+}
+
+function faceColors(name,base,lit){
+  var p=solParts[name]; if(!p||!p.t) return;
+  var c = base;
+  p.t.setAttribute("fill",mix(c,"#ffffff",lit?0.30:0.16));
+  p.l.setAttribute("fill",mix(c,"#000000",0.22));
+  p.r.setAttribute("fill",mix(c,"#000000",0.08));
+  [p.t,p.l,p.r].forEach(function(n){ n.setAttribute("stroke",mix(c,"#000000",0.38)); });
+  p.g.style.filter = lit ? "drop-shadow(0 0 7px "+c+")" : "none";
+}
+function ghostPaint(name,col,lit,nW){
+  var p=solParts[name]; if(!p||!p.single) return;
+  p.single.setAttribute("fill",col);
+  p.single.setAttribute("fill-opacity",(0.16+0.26*(nW||0)).toFixed(2));
+  p.single.setAttribute("stroke",col);
+  p.single.setAttribute("stroke-opacity",(0.45+0.45*(nW||0)).toFixed(2));
+  p.single.style.filter = lit ? "drop-shadow(0 0 5px "+col+")" : "none";
+}
+function renderSolid(s){
+  var nW=clamp((s.wl-VBB)/(VPP-VBB),0,1);
+  var nBL=clamp(Math.abs(s.bl-VH)/VH,0,1);
+  faceColors("sub",C.si,false);
+  faceColors("active",C.si2,false);
+  faceColors("snL",C.si2,false);
+  faceColors("snR",C.si2,false);
+  var wlOn=mix(C.off,C.wl,nW), wlOff=mix(C.off,C.wl,0.06), lit=nW>0.5;
+  faceColors("bwlA",wlOn,lit);
+  faceColors("bwlB",wlOff,false);
+  ghostPaint("ghA",wlOn,lit,nW); ghostPaint("ghB",wlOff,false,0);
+  faceColors("blbar",mix(C.off,C.bl,0.25+0.75*nBL), nBL>0.6);
+  faceColors("blc",mix(C.off,C.bl,0.25+0.75*nBL), false);
+
+  ["capL","capR"].forEach(function(nm,i){
+    var p=solParts[nm], f = (i===0) ? clamp(s.cell/VDD,0,1) : 0.5;
+    var dimmed = (i===1);
+    p.body.setAttribute("fill",mix(C.si2,"#000000",0.12));
+    p.body.setAttribute("stroke",mix(C.si2,"#000000",0.4));
+    p.bot.setAttribute("fill",mix(C.si2,"#000000",0.3));
+    p.top.setAttribute("fill",mix(C.si2,"#ffffff",0.22));
+    p.top.setAttribute("stroke",mix(C.si2,"#000000",0.4));
+    p.g.setAttribute("opacity", dimmed? 0.42 : 1);
+    var h=Math.max(1,p.h*f);
+    p.fill.setAttribute("y",(p.bx[1]-h).toFixed(1));
+    p.fill.setAttribute("height",h.toFixed(1));
+    p.fill.setAttribute("fill",C.chg);
+    p.fill.setAttribute("opacity", dimmed? 0.3 : (0.35+0.55*f).toFixed(2));
+  });
+}
+
+function renderMeters(s){
+  $("mWL").textContent=(s.wl<0?"−":"")+Math.abs(s.wl).toFixed(2)+" V";
+  $("mBL").textContent=s.bl.toFixed(3)+" V";
+  $("mBLB").textContent=s.blb.toFixed(3)+" V";
+  $("mCELL").textContent=s.cell.toFixed(3)+" V";
+  function bar(id,v,max,color){
+    var u=$(id); u.style.width=(clamp(v/max,0,1)*100).toFixed(1)+"%"; u.style.background=color;
+  }
+  bar("bWL",(s.wl-VBB),(VPP-VBB),mix(C.off,C.wl,clamp((s.wl-VBB)/(VPP-VBB),0,1)));
+  bar("bBL",s.bl,VDD,C.bl);
+  bar("bBLB",s.blb,VDD,C.blb);
+  bar("bCELL",s.cell,VDD,C.chg);
+  var d=(s.bl-VH)*1000;
+  var e=$("mDV");
+  e.textContent=(d>=0?"+":"−")+Math.abs(d).toFixed(0)+" mV";
+  e.style.color = Math.abs(d)<1 ? C.ink3 : (d>0? C.bl : C.blb);
+  $("mQ").textContent="저장 전하 Q = "+(CS*s.cell).toFixed(2)+" fC";
+}
+
+/* ---------------- timeline ---------------- */
+var tl=document.getElementById("tl");
+var LANES=[
+  {key:"wl",   name:"WL",   y0:52,  y1:88,  min:-0.4, max:2.7, color:function(){return C.wl;}},
+  {key:"bl",   name:"BL",   y0:114, y1:154, min:-0.12,max:1.25,color:function(){return C.bl;}, second:"blb", color2:function(){return C.blb;}},
+  {key:"cell", name:"Cell", y0:180, y1:220, min:-0.12,max:1.25,color:function(){return C.chg;}}
+];
+var X0=62, X1=976, timeline=null;
+var MONO="JetBrains Mono, Noto Sans KR, monospace", SANS="Noto Sans KR, sans-serif";
+
+function buildTimeline(){
+  var steps=state.steps, total=0, i;
+  for(i=0;i<steps.length;i++) total+=steps[i].dur;
+  var samples=[], bounds=[], t=0, prev=state.init;
+  for(i=0;i<steps.length;i++){
+    var st=steps[i], N=16;
+    bounds.push({t0:t,t1:t+st.dur,n:i+1});
+    for(var j=0;j<=N;j++){
+      var k=ease(j/N), row={t:t+st.dur*(j/N)};
+      ["wl","bl","blb","cell"].forEach(function(key){ row[key]=lerp(prev[key],st.sig[key],k); });
+      samples.push(row);
+    }
+    prev=st.sig; t+=st.dur;
+  }
+  timeline={total:total,samples:samples,bounds:bounds};
+  drawTimeline();
+}
+function txt(g,x,y,str,fill,size,fam,anchor){
+  var t=el("text",{x:x,y:y,fill:fill,"font-size":size,"font-family":fam||SANS});
+  if(anchor) t.setAttribute("text-anchor",anchor);
+  t.textContent=str; g.appendChild(t); return t;
+}
+function drawLegend(g){
+  var items=[["WL",C.wl,15],["BL",C.bl,15],["/BL",C.blb,21],["Storage node",C.chg,74]];
+  var gap=18, total=0, i;
+  for(i=0;i<items.length;i++) total+=18+5+items[i][2]+gap;
+  total-=gap;
+  var x=X1-total, y=15;
+  for(i=0;i<items.length;i++){
+    g.appendChild(el("line",{x1:x,y1:y,x2:x+18,y2:y,stroke:items[i][1],"stroke-width":2.6,"stroke-linecap":"round"}));
+    txt(g,x+23,y+3.6,items[i][0],C.ink2,10.5);
+    x+=18+5+items[i][2]+gap;
+  }
+}
+var PARAMS={
+  read:   [{n:"tRCD",a:1,b:5,r:0,c:"bl"},{n:"tRP",a:8,b:8,r:0,c:"chg"},{n:"tRAS",a:1,b:7,r:1,c:"wl"}],
+  write:  [{n:"tRCD",a:1,b:4,r:0,c:"bl"},{n:"tWR",a:6,b:6,r:0,c:"sa"},{n:"tRP",a:7,b:8,r:0,c:"chg"},
+           {n:"tRAS",a:1,b:6,r:1,c:"wl"}],
+  refresh:[{n:"tREF",a:0,b:0,r:0,c:"ink3"},{n:"tRFC",a:1,b:7,r:1,c:"sa"}]
+};
+var paramEls=[];
+function xAt(t){ return X0+(t/timeline.total)*(X1-X0); }
+function drawParams(g){
+  paramEls=[];
+  var set = state.key==="refresh" ? PARAMS.refresh
+          : (state.key.indexOf("write")===0 ? PARAMS.write : PARAMS.read);
+  var rows=[250,276];
+  set.forEach(function(p){
+    if(p.b>=timeline.bounds.length) return;
+    var t0=timeline.bounds[p.a].t0, t1=timeline.bounds[p.b].t1;
+    var x0=xAt(t0), x1=xAt(t1), y=rows[p.r], col=C[p.c], parts=[];
+    parts.push(el("line",{x1:x0,y1:y,x2:x1,y2:y,stroke:col,"stroke-width":1.4}));
+    parts.push(el("line",{x1:x0,y1:y-5,x2:x0,y2:y+5,stroke:col,"stroke-width":1.4}));
+    parts.push(el("line",{x1:x1,y1:y-5,x2:x1,y2:y+5,stroke:col,"stroke-width":1.4}));
+    var cx=(x0+x1)/2, w=p.n.length*7.4+16;
+    parts.push(el("rect",{x:cx-w/2,y:y-9,width:w,height:18,rx:9,fill:C.panel,stroke:col,"stroke-width":1}));
+    var lb=el("text",{x:cx,y:y+4,fill:col,"font-size":10.5,"font-family":MONO,"text-anchor":"middle","font-weight":500});
+    lb.textContent=p.n; parts.push(lb);
+    var grp=el("g",{opacity:0.45});
+    parts.forEach(function(n){ grp.appendChild(n); });
+    g.appendChild(grp);
+    paramEls.push({g:grp,t0:t0,t1:t1});
+  });
+}
+function drawDetail(g){
+  var si=-1,i;
+  for(i=0;i<state.steps.length;i++) if(state.steps[i].chip.indexOf("harge sharing")>=0){ si=i; break; }
+  if(si<0) return;
+  var b=timeline.bounds[si], span=b.t1-b.t0;
+  var w0=Math.max(0,b.t0-span*0.18), w1=Math.min(timeline.total,b.t1+span*0.10);
+  var L=LANES[1];
+  var hx0=X0+(w0/timeline.total)*(X1-X0), hx1=X0+(w1/timeline.total)*(X1-X0);
+  g.appendChild(el("rect",{x:hx0,y:L.y0-5,width:Math.max(6,hx1-hx0),height:(L.y1-L.y0)+10,
+    fill:"none",stroke:C.ink3,"stroke-width":1,"stroke-dasharray":"3 3",rx:5}));
+
+  var bx0=576,bx1=976,by0=296,by1=394;
+  g.appendChild(el("rect",{x:bx0,y:by0,width:bx1-bx0,height:by1-by0,fill:"none",stroke:C.rule,"stroke-width":1,rx:9}));
+  g.appendChild(el("polyline",{points:hx0+","+(L.y1+6)+" "+hx0+",290 "+bx0+","+by0,fill:"none",
+    stroke:C.rule,"stroke-width":1,"stroke-dasharray":"3 4"}));
+  g.appendChild(el("polyline",{points:hx1+","+(L.y1+6)+" "+hx1+",290 "+bx1+","+by0,fill:"none",
+    stroke:C.rule,"stroke-width":1,"stroke-dasharray":"3 4"}));
+  var isWr = (state.key==="write1"||state.key==="write0");
+  txt(g,bx0+12,by0+17, isWr? "ACT 구간 확대 — 쓰기 이전 데이터의 ΔV" : "Charge sharing 확대", C.ink2,10.5);
+  txt(g,bx1-12,by0+17,"세로 ±160 mV",C.ink3,9.5,MONO,"end");
+
+  var px0=bx0+56, px1=bx1-114, py0=by0+30, py1=by1-26;
+  var yc=(py0+py1)/2, half=(py1-py0)/2, RNG=0.16;
+  var OFFSET=0.025, NEED=0.060;
+  function mx(t){ return px0+((t-w0)/(w1-w0))*(px1-px0); }
+  function my(v){ return yc-clamp((v-VH)/RNG,-1,1)*half; }
+
+  var hNeed=(NEED/RNG)*half, hOff=(OFFSET/RNG)*half, ww=(px1-px0)+18;
+  g.appendChild(el("rect",{x:px0,y:yc-hNeed,width:ww,height:hNeed*2,fill:C.ink3,opacity:0.10,rx:2}));
+  g.appendChild(el("rect",{x:px0,y:yc-hOff,width:ww,height:hOff*2,fill:C.sa,opacity:0.20,rx:2}));
+  g.appendChild(el("line",{x1:px0,y1:yc,x2:px1+18,y2:yc,stroke:C.rule,"stroke-width":1,"stroke-dasharray":"3 5"}));
+  txt(g,px0-8,yc+3.5,"VDD/2",C.ink3,9,MONO,"end");
+  txt(g,px0-8,my(VH+NEED)+3.5,"+60",C.ink3,8.5,MONO,"end");
+  txt(g,px0-8,my(VH-NEED)+3.5,"\u221260",C.ink3,8.5,MONO,"end");
+
+  ["blb","bl"].forEach(function(k){
+    var pts=[];
+    timeline.samples.forEach(function(sm){ if(sm.t>=w0&&sm.t<=w1) pts.push(mx(sm.t).toFixed(1)+","+my(sm[k]).toFixed(1)); });
+    if(pts.length) g.appendChild(el("polyline",{points:pts.join(" "),fill:"none",
+      stroke:(k==="bl"?C.bl:C.blb),"stroke-width":2.2,"stroke-linejoin":"round","stroke-linecap":"round"}));
+  });
+
+  var ax=mx(b.t1)+4, yv=my(state.steps[si].sig.bl);
+  var dmv=(state.steps[si].sig.bl-VH)*1000, ad=Math.abs(dmv);
+  var col=dmv>=0?C.bl:C.blb;
+  g.appendChild(el("line",{x1:ax,y1:yc,x2:ax,y2:yv,stroke:col,"stroke-width":1.4}));
+  g.appendChild(el("line",{x1:ax-4,y1:yc,x2:ax+4,y2:yc,stroke:col,"stroke-width":1.4}));
+  g.appendChild(el("line",{x1:ax-4,y1:yv,x2:ax+4,y2:yv,stroke:col,"stroke-width":1.4}));
+  txt(g,ax+10,(yc+yv)/2+4,"\u0394V "+(dmv>=0?"+":"\u2212")+ad.toFixed(0)+" mV",col,11.5,MONO);
+
+  var verdict = ad < OFFSET*1000 ? ["FAIL",C.sa] : (ad < NEED*1000 ? ["MARGINAL",C.wl] : ["PASS",C.chg]);
+  var vy=(yc+yv)/2+21;
+  g.appendChild(el("rect",{x:ax+10,y:vy-11,width:verdict[0].length*7+14,height:16,rx:8,
+    fill:verdict[1],opacity:0.14,stroke:verdict[1],"stroke-width":1}));
+  txt(g,ax+17,vy+1,verdict[0],verdict[1],9.5,MONO);
+
+  txt(g,bx0+12,by1-9,"\ub744: BLSA offset \u00b125 mV \u00b7 \uad8c\uc7a5 sensing margin \u00b160 mV",C.ink3,8.5,MONO);
+}
+function drawTimeline(){
+  while(tl.firstChild) tl.removeChild(tl.firstChild);
+  if(!timeline) return;
+  var g=el("g",{}); tl.appendChild(g);
+  drawLegend(g);
+  timeline.bounds.forEach(function(b){
+    var x=X0+(b.t0/timeline.total)*(X1-X0);
+    g.appendChild(el("line",{x1:x,y1:42,x2:x,y2:228,stroke:C.rule,"stroke-width":1,"stroke-dasharray":"2 4"}));
+    txt(g,x+4,38,b.n,C.ink3,10,MONO);
+  });
+  LANES.forEach(function(L){
+    txt(g,10,(L.y0+L.y1)/2+4,L.name,C.ink2,11);
+    g.appendChild(el("line",{x1:X0,y1:L.y1,x2:X1,y2:L.y1,stroke:C.rule,"stroke-width":1}));
+    if(L.key!=="wl"){
+      var yh=L.y1-((VH-L.min)/(L.max-L.min))*(L.y1-L.y0);
+      g.appendChild(el("line",{x1:X0,y1:yh,x2:X1,y2:yh,stroke:C.rule,"stroke-width":1,"stroke-dasharray":"3 5"}));
+      txt(g,X1+3,yh+3,"VDD/2",C.ink3,9,MONO);
+    }
+    function poly(key,color){
+      var pts=timeline.samples.map(function(sm){
+        var x=X0+(sm.t/timeline.total)*(X1-X0);
+        var y=L.y1-((sm[key]-L.min)/(L.max-L.min))*(L.y1-L.y0);
+        return x.toFixed(1)+","+y.toFixed(1);
+      }).join(" ");
+      g.appendChild(el("polyline",{points:pts,fill:"none",stroke:color,"stroke-width":2,"stroke-linejoin":"round","stroke-linecap":"round"}));
+    }
+    poly(L.key,L.color());
+    if(L.second) poly(L.second,L.color2());
+  });
+  drawParams(g);
+  drawDetail(g);
+  var shade=el("rect",{id:"tlShade",x:X0,y:42,width:0,height:186,fill:C.panel,opacity:0.72});
+  g.appendChild(shade);
+  var cur=el("line",{id:"tlCursor",x1:X0,y1:28,x2:X0,y2:230,stroke:C.ink,"stroke-width":1.4});
+  g.appendChild(cur);
+}
+function updateCursor(){
+  if(!timeline) return;
+  var t=0;
+  for(var i=0;i<state.idx;i++) t+=state.steps[i].dur;
+  t+=Math.min(state.elapsed,state.steps[state.idx].dur);
+  var x=X0+(t/timeline.total)*(X1-X0);
+  var sh=document.getElementById("tlShade"), cu=document.getElementById("tlCursor");
+  if(sh){ sh.setAttribute("x",x); sh.setAttribute("width",Math.max(0,X1-x)); }
+  if(cu){ cu.setAttribute("x1",x); cu.setAttribute("x2",x); }
+  var pb=$("sbBar"); if(pb) pb.style.width=((t/timeline.total)*100).toFixed(2)+"%";
+  for(var i=0;i<paramEls.length;i++){
+    var pe=paramEls[i];
+    pe.g.setAttribute("opacity", (t>=pe.t0 && t<=pe.t1) ? "1" : "0.42");
+  }
+}
+
+/* ---------------- step UI ---------------- */
+var CMDC={};
+function renderSteps(){
+  var box=$("chips");
+  box.innerHTML="";
+  state.steps.forEach(function(st,i){
+    var b=document.createElement("button");
+    b.className="chip"+(i<state.idx?" done":"")+(i===state.idx?" now":"");
+    b.innerHTML='<span class="n">'+(i+1)+'</span>'+st.chip+(i<state.steps.length-1?'<span class="arrow">→</span>':'');
+    b.addEventListener("click",function(){ jumpTo(i); });
+    box.appendChild(b);
+  });
+  var st=state.steps[state.idx];
+  CMDC={IDLE:C.ink3, ACT:C.wl, RD:C.bl, WR:C.chg, PRE:C.ink3, REF:C.sa};
+  $("stepNo").textContent=(state.idx+1);
+  $("stepCmd").textContent=st.cmd;
+  $("stepCmd").style.color=CMDC[st.cmd]||C.ink3;
+  $("stepTitleText").textContent=(state.idx+1)+". "+st.title;
+  $("stepDesc").textContent=st.desc;
+  $("sbNo").textContent=(state.idx+1);
+  $("sbChip").textContent=st.chip;
+  $("sbTitle").textContent=st.title;
+  $("sbPill").textContent=st.cmd;
+  $("sbPill").style.color=CMDC[st.cmd]||C.ink3;
+}
+var sbarOn=true;
+function updateSbar(){
+  var bar=$("sbar"), anchor=$("steps");
+  if(!bar||!anchor||!anchor.getBoundingClientRect) return;
+  var show = sbarOn && anchor.getBoundingClientRect().bottom < 46;
+  bar.className = show ? "sbar on" : "sbar";
+}
+function renderTransport(){
+  var d = state.playing ? "M3.5 2h3.5v12H3.5zM9 2h3.5v12H9z" : "M4 2l9 6-9 6z";
+  $("playIcon").setAttribute("d", d);
+  $("sbPlayIcon").setAttribute("d", d);
+  document.querySelectorAll("#ops .op").forEach(function(b){
+    b.setAttribute("aria-pressed", b.dataset.key===state.key ? "true":"false");
+  });
+  document.querySelectorAll("#speed .sp").forEach(function(b){
+    b.setAttribute("aria-pressed", (+b.dataset.v===state.speed)?"true":"false");
+  });
+}
+
+/* ---------------- control ---------------- */
+function setOp(key,autoplay){
+  var built=OPS[key].build();
+  state.key=key;
+  state.init=built.init;
+  state.steps=built.steps;
+  state.idx=0;
+  state.elapsed=0;
+  state.entry=S(built.init,{});
+  state.cur=S(built.init,{});
+  state.playing=!!autoplay;
+  state.settling=true;
+  buildTimeline();
+  renderSteps();
+  renderTransport();
+}
+function jumpTo(i){
+  i=clamp(i,0,state.steps.length-1);
+  state.entry=S(state.cur,{});   // start from whatever is on screen: never snaps
+  state.idx=i;
+  state.elapsed=0;
+  state.settling=true;           // play out this step even while paused
+  renderSteps();
+  renderTransport();
+}
+function advance(){
+  if(state.idx<state.steps.length-1){
+    state.entry=S(state.steps[state.idx].sig,{});
+    state.idx++;
+    state.elapsed=0;
+    renderSteps();
+    return true;
+  }
+  state.elapsed=state.steps[state.idx].dur;
+  state.playing=false;
+  renderTransport();
+  return false;
+}
+function togglePlay(){
+  var last=state.steps.length-1;
+  if(!state.playing && state.idx===last && state.elapsed>=state.steps[last].dur){
+    setOp(state.key,true); return;
+  }
+  state.playing=!state.playing;
+  renderTransport();
+}
+
+/* ---------------- main loop (single rAF, single clock) ---------------- */
+var last=0;
+function tick(now){
+  requestAnimationFrame(tick);
+  var dt=last?Math.min(now-last,60):0; last=now;
+  if(!state.steps.length) return;
+
+  if(state.playing){
+    state.settling=false;
+    state.elapsed+=dt*state.speed;
+    var guard=0;
+    while(state.playing && state.elapsed>=state.steps[state.idx].dur && guard++<20){
+      var over=state.elapsed-state.steps[state.idx].dur;
+      if(!advance()) break;
+      state.elapsed=over;
+    }
+  } else if(state.settling){
+    state.elapsed+=dt*state.speed;
+    if(state.elapsed>=state.steps[state.idx].dur){
+      state.elapsed=state.steps[state.idx].dur;
+      state.settling=false;
+    }
+  }
+  var st=state.steps[state.idx];
+  var t=ease(clamp(state.elapsed/st.dur,0,1));
+  var s={};
+  ["wl","bl","blb","cell"].forEach(function(k){ s[k]=lerp(state.entry[k],st.sig[k],t); });
+  ["sa","eq","cs"].forEach(function(k){ s[k]=st.sig[k]; });
+  s.flow=st.sig.flow;
+  state.cur=s;
+
+  if(state.playing||state.settling) state.phase=(state.phase + dt*state.speed/1400)%1;
+  renderCircuit(s);
+  renderSolid(s);
+  renderMeters(s);
+  renderArray(s);
+  placeDots(dots2,path2,len2,s.flow,state.phase);
+  placeDots(dots3,path3,len3,s.flow,state.phase);
+  updateCursor();
+  if((sbTick=(sbTick+1)%6)===0) updateSbar();
+}
+var sbTick=0;
+
+/* ---------------- wiring ---------------- */
+(function init(){
+  readColors();
+
+  var opsBox=$("ops");
+  ORDER.forEach(function(k){
+    var b=document.createElement("button");
+    b.className="op"; b.dataset.key=k; b.textContent=OPS[k].label;
+    b.setAttribute("aria-pressed","false");
+    b.addEventListener("click",function(){ setOp(k,true); });
+    opsBox.appendChild(b);
+  });
+  var spBox=$("speed");
+  [0.5,1,2].forEach(function(v){
+    var b=document.createElement("button");
+    b.className="sp"; b.dataset.v=v; b.textContent=v+"×";
+    b.setAttribute("aria-pressed", v===1?"true":"false");
+    b.addEventListener("click",function(){ state.speed=v; renderTransport(); });
+    spBox.appendChild(b);
+  });
+
+  $("btnPlay").addEventListener("click",togglePlay);
+  $("sbPlay").addEventListener("click",togglePlay);
+  $("sbNext").addEventListener("click",function(){ state.playing=false; jumpTo(state.idx+1); renderTransport(); });
+  $("sbPrev").addEventListener("click",function(){ state.playing=false; jumpTo(state.idx-1); renderTransport(); });
+  $("sbNo").addEventListener("click",function(){
+    if(window.scrollTo) window.scrollTo({top:0,behavior:"smooth"});
+  });
+  $("btnSbar").addEventListener("click",function(){
+    sbarOn=!sbarOn;
+    $("btnSbar").setAttribute("aria-pressed",sbarOn?"true":"false");
+    try{ localStorage.setItem("dram-sbar",sbarOn?"1":"0"); }catch(e){}
+    updateSbar();
+  });
+  try{ if(localStorage.getItem("dram-sbar")==="0"){ sbarOn=false; $("btnSbar").setAttribute("aria-pressed","false"); } }catch(e){}
+  if(window.addEventListener){
+    window.addEventListener("scroll",updateSbar,{passive:true});
+    window.addEventListener("resize",updateSbar);
+  }
+  $("btnNext").addEventListener("click",function(){ state.playing=false; jumpTo(state.idx+1); renderTransport(); });
+  $("btnPrev").addEventListener("click",function(){ state.playing=false; jumpTo(state.idx-1); renderTransport(); });
+  $("btnReset").addEventListener("click",function(){ setOp(state.key,false); });
+  document.addEventListener("keydown",function(e){
+    if(e.target.tagName==="INPUT") return;
+    if(e.key===" "){ e.preventDefault(); togglePlay(); }
+    else if(e.key==="ArrowRight"){ state.playing=false; jumpTo(state.idx+1); renderTransport(); }
+    else if(e.key==="ArrowLeft"){ state.playing=false; jumpTo(state.idx-1); renderTransport(); }
+  });
+
+  var mq=window.matchMedia("(prefers-color-scheme: dark)");
+  var onTheme=function(){ readColors(); drawTimeline(); updateCursor(); };
+  function applyTheme(m,persist){
+    document.documentElement.setAttribute("data-theme",m);
+    document.querySelectorAll("#modes .md").forEach(function(b){
+      b.setAttribute("aria-pressed", b.dataset.m===m ? "true":"false");
+    });
+    if(persist){ try{ localStorage.setItem("dram-theme",m); }catch(e){} }
+    readColors();
+    if(timeline){ drawTimeline(); updateCursor(); }
+  }
+  var saved=null; try{ saved=localStorage.getItem("dram-theme"); }catch(e){}
+  applyTheme(saved || (mq.matches?"dark":"light"), false);
+  document.querySelectorAll("#modes .md").forEach(function(b){
+    b.addEventListener("click",function(){ applyTheme(b.dataset.m,true); });
+  });
+  if(mq.addEventListener) mq.addEventListener("change",function(){
+    var stored=null; try{ stored=localStorage.getItem("dram-theme"); }catch(e){}
+    if(!stored) applyTheme(mq.matches?"dark":"light",false);
+  });
+
+  var reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  setOp("read1",!reduce);
+  requestAnimationFrame(tick);
+})();
+
+/* static SVG styling that depends on tokens */
+(function styleStatic(){
+  var css=document.createElement("style");
+  css.textContent=
+    "#cir .lead{stroke:var(--ink3);stroke-width:2}"+
+    "#cir .plate{stroke:var(--ink2);stroke-width:3.4;stroke-linecap:round}"+
+    "#cir .plate2{stroke:var(--ink3);stroke-width:2.4;stroke-linecap:round}"+
+    "#cir .node{fill:var(--ink3)}"+
+    "#cir .chanoff{fill:var(--dim);opacity:.5}"+
+    "#cir .gateoff{stroke:var(--off);stroke-width:6}"+
+    "#cir .blk{fill:var(--surface-2);stroke:var(--line);stroke-width:1}"+
+    "#cir .blkT{fill:var(--ink2);font-size:13px;text-anchor:middle;font-family:'Noto Sans KR',sans-serif}"+
+    "#cir .blkS{fill:var(--ink3);font-size:11px;text-anchor:middle;font-family:var(--mono)}"+
+    "#cir .lb{fill:var(--ink2);font-size:13px;font-family:'Noto Sans KR',sans-serif}"+
+    "#cir .lb2{fill:var(--ink3);font-size:11px;font-family:'Noto Sans KR',sans-serif}"+
+    "#cir .mono{font-size:12.5px;font-family:var(--mono)}";
+  document.head.appendChild(css);
+})();
+
+})();
+</script>
+</body>
+</html>

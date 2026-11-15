@@ -1,0 +1,1112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DRAM Sense Amplifier 동작 시뮬레이터</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@600;700;800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* Palette and surfaces follow the Row Hammer simulator: solid cards on a navy-tinted
+   field, groove-style segmented controls, gold as the "current step" accent. */
+:root{
+  color-scheme:light;
+  --bg:#e9edf6; --bg2:#f4f6fb; --glow:rgba(42,102,220,.09);
+  --surface:#ffffff; --surface-2:#f2f4fa; --groove:#e8ecf5;
+  --ink:#121831; --ink2:#434c6e; --ink3:#7982a3;
+  --line:#dae0ed; --line-soft:rgba(18,24,49,.08);
+  --e:#a06d00; --e-soft:#fbefd0; --ok:#178f6f; --bad-soft:#fbe3e1;
+  --wl:#a06d00; --bl:#2a66dc; --blb:#7650cf; --chg:#0f766e; --sa:#b0348a;
+  --lo:#2a66dc; --hi:#d2392f; --bad:#d2392f; --good:#178f6f;
+  --si:#cfd6e9; --dim:#c3cce3; --off:#a9b1cb;
+  --shadow:0 1px 2px rgba(18,24,49,.06),0 10px 28px rgba(18,24,49,.07);
+  --cap-sh:0 1px 3px rgba(18,24,49,.12);
+  /* names the script reads through getComputedStyle */
+  --panel:#ffffff; --rule:#dae0ed; --rule-soft:rgba(18,24,49,.08);
+  --display:"Gothic A1","Noto Sans KR",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Noto Sans KR",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#080c19; --bg2:#0d1226; --glow:rgba(255,196,67,.07);
+  --surface:#131930; --surface-2:#192040; --groove:#0c1124;
+  --ink:#e9edf8; --ink2:#b0b9d6; --ink3:#7f8ab0;
+  --line:#262f55; --line-soft:rgba(160,180,240,.10);
+  --e:#ffc443; --e-soft:#3d3014; --ok:#4fd1a5; --bad-soft:#45201f;
+  --wl:#ffc443; --bl:#5a92ff; --blb:#a98bff; --chg:#2dd4bf; --sa:#f472b6;
+  --lo:#5a92ff; --hi:#ff6b5f; --bad:#ff6b5f; --good:#4fd1a5;
+  --si:#232c50; --dim:#2c365e; --off:#3b4672;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.28);
+  --cap-sh:0 1px 3px rgba(0,0,0,.4);
+  --panel:#131930; --rule:#262f55; --rule-soft:rgba(160,180,240,.10);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#080c19; --bg2:#0d1226; --glow:rgba(255,196,67,.07);
+  --surface:#131930; --surface-2:#192040; --groove:#0c1124;
+  --ink:#e9edf8; --ink2:#b0b9d6; --ink3:#7f8ab0;
+  --line:#262f55; --line-soft:rgba(160,180,240,.10);
+  --e:#ffc443; --e-soft:#3d3014; --ok:#4fd1a5; --bad-soft:#45201f;
+  --wl:#ffc443; --bl:#5a92ff; --blb:#a98bff; --chg:#2dd4bf; --sa:#f472b6;
+  --lo:#5a92ff; --hi:#ff6b5f; --bad:#ff6b5f; --good:#4fd1a5;
+  --si:#232c50; --dim:#2c365e; --off:#3b4672;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.28);
+  --cap-sh:0 1px 3px rgba(0,0,0,.4);
+  --panel:#131930; --rule:#262f55; --rule-soft:rgba(160,180,240,.10);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;
+  background:radial-gradient(1000px 560px at 88% -14%, var(--glow) 0%, transparent 62%),
+             linear-gradient(180deg, var(--bg2) 0%, var(--bg) 60%);
+  background-color:var(--bg); background-attachment:fixed;
+  color:var(--ink);
+  font-family:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  font-size:15px;line-height:1.6;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 18px 56px}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:none}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:8px}
+
+.card,.steps{background:var(--surface);border:1px solid var(--line);border-radius:18px;
+  box-shadow:var(--shadow);min-width:0}
+.ops,.tbar,.modes{display:flex;align-items:center;background:var(--groove);border:1px solid var(--line);
+  border-radius:14px;padding:4px;gap:3px}
+.ops{flex-wrap:wrap}
+.byline{text-align:right;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink3);margin:0 2px 10px 0}
+
+.brand{display:flex;gap:16px;align-items:center;min-width:0}
+.brand>div{min-width:0}
+.mark{width:54px;height:54px;flex:0 0 auto}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 24px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.eyebrow{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:var(--ink3);margin-bottom:8px}
+.eyebrow::after{content:"";flex:1;min-width:48px;height:1px;background:var(--line-soft)}
+h1{font-family:var(--display);font-size:38px;font-weight:800;letter-spacing:-.05em;margin:0;line-height:1.2;text-wrap:balance}
+h1 em{font-style:normal;font-family:var(--mono);font-size:.58em;font-weight:500;
+  letter-spacing:-.01em;color:var(--ink3);vertical-align:.2em}
+.sub{font-family:var(--mono);font-size:11.5px;color:var(--ink3);margin-top:8px}
+.specs{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px 18px;font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.specs b{display:block;font-weight:500;color:var(--ink);font-size:13.5px;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.specs b.bad{color:var(--bad)}
+.specs b.good{color:var(--good)}
+.modes{align-self:flex-end;border-radius:999px;padding:3px}
+.md{width:32px;height:26px;display:grid;place-items:center;border-radius:999px;color:var(--ink3);border:1px solid transparent}
+.md svg{width:14px;height:14px;fill:currentColor}
+.md:hover{color:var(--ink2)}
+.md[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:var(--cap-sh)}
+
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0 12px}
+.op{padding:7px 15px;border-radius:10px;border:1px solid transparent;font-size:13.5px;font-weight:500;color:var(--ink2);
+  transition:background .16s,color .16s,box-shadow .16s}
+.op:hover{color:var(--ink)}
+.op[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:var(--cap-sh)}
+.spacer{flex:1 1 12px}
+.tb{width:34px;height:30px;display:grid;place-items:center;border-radius:10px;color:var(--ink2);transition:background .15s,color .15s}
+.tb:hover{background:var(--surface);color:var(--ink);box-shadow:var(--cap-sh)}
+.tb svg{width:15px;height:15px;fill:currentColor}
+.speed{display:flex;gap:2px;margin-left:5px;padding-left:6px;border-left:1px solid var(--line)}
+.sp{padding:5px 9px;font-family:var(--mono);font-size:11.5px;border-radius:9px;color:var(--ink3)}
+.sp[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--cap-sh)}
+
+/* params */
+.pcard{padding:14px 16px;margin-bottom:12px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:11px 24px}
+.prm .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--ink2)}
+.prm .row b{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.prm .row s{text-decoration:none;color:var(--ink3);font-size:11px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;margin:8px 0 2px;border-radius:4px;
+  background:var(--groove);border:1px solid var(--line);outline-offset:4px;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;border-radius:50%;
+  background:var(--surface);border:2px solid var(--ink2);box-shadow:0 1px 4px rgba(0,0,0,.2);cursor:pointer}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--surface);
+  border:2px solid var(--ink2);cursor:pointer}
+
+/* steps */
+.steps{overflow:hidden}
+.chips{display:flex;flex-wrap:wrap;gap:3px;padding:10px 12px;border-bottom:1px solid var(--line-soft);background:var(--surface-2)}
+.chip{display:flex;align-items:center;gap:6px;padding:5px 11px 5px 6px;border-radius:9px;font-size:12.5px;color:var(--ink3);
+  white-space:nowrap;border:1px solid transparent;transition:background .15s,color .15s,box-shadow .15s}
+.chip .n{font-family:var(--mono);font-size:10.5px;width:18px;height:18px;display:grid;place-items:center;
+  border:1px solid var(--line);border-radius:50%;color:var(--ink3)}
+.chip.done{color:var(--ink2)} .chip.done .n{border-color:var(--ok);color:var(--ok)}
+.chip.now{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:var(--cap-sh);font-weight:500}
+.chip.now .n{border-color:var(--ink);color:var(--ink)}
+.chip:not(.now):hover{color:var(--ink)}
+.chip.fail.done .n,.chip.fail.now .n{border-color:var(--bad);color:var(--bad)}
+.narr{padding:13px 16px;display:flex;gap:15px;align-items:flex-start;min-height:80px}
+.narr .no{font-family:var(--mono);font-size:28px;line-height:1;color:var(--ink3);min-width:34px;padding-top:2px}
+#stepTitle{font-family:var(--display);font-weight:700;font-size:16.5px;letter-spacing:-.025em;margin:0 0 4px;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;line-height:1.35}
+.cmd{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.04em;padding:2px 8px;border-radius:999px;
+  border:1px solid currentColor;flex:0 0 auto}
+#stepDesc{margin:0;color:var(--ink2);font-size:13.5px;max-width:86ch}
+#stepDesc em{font-style:normal;color:var(--bad);font-weight:500}
+
+/* stage */
+.stage{display:grid;grid-template-columns:minmax(0,1.24fr) minmax(0,.76fr);gap:12px;margin-top:12px;align-items:start}
+.glabel{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--ink3);margin:0 1px 0 6px}
+
+/* sticky compact bar */
+.sbar{position:fixed;top:0;left:0;right:0;z-index:40;opacity:0;transform:translateY(-110%);
+  transition:transform .22s ease,opacity .22s ease;pointer-events:none;
+  background:var(--surface);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.sbar.on{opacity:1;transform:none;pointer-events:auto}
+.sbar-in{max-width:1180px;margin:0 auto;padding:6px 18px;display:flex;align-items:center;gap:10px}
+.sb-no{width:24px;height:24px;border-radius:50%;border:1px solid var(--ink);color:var(--ink);
+  font-family:var(--mono);font-size:10.5px;display:grid;place-items:center;flex:0 0 auto}
+.sb-tt{min-width:0;flex:1;display:flex;align-items:baseline;gap:9px}
+.sb-tt b{font-family:var(--display);font-size:13.5px;font-weight:700;letter-spacing:-.03em;white-space:nowrap;flex:0 0 auto}
+.sb-tt span{font-size:11.5px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-pill{font-family:var(--mono);font-size:10px;padding:2px 9px;border-radius:999px;border:1px solid currentColor;flex:0 0 auto;color:var(--good)}
+.sb-pill.ng{color:var(--bad)}
+.sb-prog{height:3px;background:var(--groove)}
+.sb-prog u{display:block;height:100%;width:0;background:var(--ink2);border-radius:2px}
+@media (max-width:680px){ .sbar-in{padding:6px 12px;gap:8px} .sb-tt span{display:none} }
+
+.side{display:grid;gap:12px}
+.card{padding:14px}
+.card h2{font-family:var(--display);margin:0 0 2px;font-size:13.5px;font-weight:700;color:var(--ink);letter-spacing:-.02em}
+.card .hint{margin:0 0 8px;font-size:11.5px;color:var(--ink3);line-height:1.5}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.legend{display:grid;gap:5px;margin-top:8px;padding-top:9px;border-top:1px solid var(--line-soft);font-size:11.5px;color:var(--ink2)}
+.legend div{display:flex;gap:7px;align-items:baseline}
+.legend i{width:10px;height:10px;border-radius:3px;flex:0 0 auto;transform:translateY(1px)}
+.legend span{color:var(--ink3)}
+
+.meter{margin-bottom:10px}
+.meter .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink2);gap:8px}
+.meter .v{font-family:var(--mono);font-size:13px;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+.bar{position:relative;height:6px;background:var(--groove);border:1px solid var(--line-soft);border-radius:4px;margin-top:5px;overflow:hidden}
+.bar u{position:absolute;left:0;top:0;bottom:0;border-radius:4px;display:block}
+.bar b{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--bad);border-radius:1px}
+.dvbox{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:12px;padding:9px 11px}
+.dvbox .k{font-size:11.5px;color:var(--ink3)}
+.dvbox .val{font-family:var(--mono);font-size:19px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.verdict{margin-top:10px;border-radius:12px;padding:9px 12px;border:1px solid;font-size:12.5px;display:flex;gap:10px;align-items:center}
+.verdict.ok{border-color:var(--good);color:var(--good)}
+.verdict.ng{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+.verdict b{font-family:var(--display);font-size:15px;font-weight:800;letter-spacing:-.02em}
+.verdict span{color:var(--ink2);font-size:11.5px}
+.params{border-top:1px solid var(--line-soft);margin-top:10px;padding-top:9px;font-family:var(--mono);font-size:11px;
+  color:var(--ink3);display:grid;gap:3px}
+.params div{display:flex;justify-content:space-between;gap:8px}
+.params span{color:var(--ink2);white-space:nowrap}
+.bottom{margin-top:12px}
+footer{margin-top:18px;font-size:11.5px;color:var(--ink3);display:flex;flex-wrap:wrap;gap:6px 18px;line-height:1.7}
+
+@keyframes failpulse{0%,100%{opacity:.45}50%{opacity:1}}
+.failpulse{animation:failpulse 1.15s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.failpulse{animation:none;opacity:.95} .op,.tb,.chip,.sbar{transition:none}}
+@media (max-width:980px){ .stage{grid-template-columns:minmax(0,1fr)} }
+@media (max-width:680px){
+  .wrap{padding:16px 12px 44px}
+  .specs{order:3;width:100%;margin-left:0;flex-wrap:wrap;gap:14px}
+  .modes{order:4;margin-left:auto}
+  h1{font-size:28px}
+  .mark{width:42px;height:42px}
+  .narr .no{display:none}
+  .ops{display:grid;grid-template-columns:1fr 1fr;width:100%}
+}
+</style>
+</head>
+<body>
+<div class="sbar" id="sbar">
+  <div class="sbar-in">
+    <button class="sb-no" id="sbNo" title="맨 위로" aria-label="맨 위로">1</button>
+    <div class="sb-tt"><b id="sbChip">Precharge</b><span id="sbTitle">BL 쌍이 VDD/2로 묶여 있다</span></div>
+    <span class="sb-pill" id="sbPill">PASS</span>
+    <div class="tbar">
+      <button class="tb" id="sbPrev" title="이전 단계" aria-label="이전 단계"><svg viewBox="0 0 16 16"><path d="M4 2h2v12H4zM13 2v12L6 8z"/></svg></button>
+      <button class="tb" id="sbPlay" title="재생 / 일시정지" aria-label="재생 또는 일시정지"><svg viewBox="0 0 16 16"><path id="sbPlayIcon" d="M4 2l9 6-9 6z"/></svg></button>
+      <button class="tb" id="sbNext" title="다음 단계" aria-label="다음 단계"><svg viewBox="0 0 16 16"><path d="M10 2h2v12h-2zM3 2l7 6-7 6z"/></svg></button>
+    </div>
+  </div>
+  <div class="sb-prog"><u id="sbProg"></u></div>
+</div>
+
+<div class="wrap">
+
+<div class="byline">made by june</div>
+
+<header>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 56 56" aria-hidden="true"><path d="M4 28 H20 L27 14 H52" fill="none" stroke="var(--bl)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/><path d="M4 28 H20 L27 42 H52" fill="none" stroke="var(--blb)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/><rect x="17" y="21" width="14" height="14" rx="3" fill="none" stroke="var(--ink3)" stroke-width="2"/><circle cx="24" cy="28" r="2.4" fill="var(--wl)"/></svg>
+    <div><div class="eyebrow">SEMICONDUCTOR · MEMORY</div>
+    <h1>DRAM <em>Sense Amplifier</em> 동작</h1>
+    <div class="sub">charge sharing · NMOS/PMOS latch · restore — sensing margin & fail mechanism</div></div>
+  </div>
+  <div class="specs">
+    <div>ΔV<sub>BL</sub><b id="sDV">+138 mV</b></div>
+    <div>센싱 마진<b id="sMG">113 mV</b></div>
+    <div>판정<b id="sVER">PASS</b></div>
+    <div>VDD<b>1.1 V</b></div>
+  </div>
+  <div class="modes" id="modes" role="group" aria-label="테마 전환">
+    <button class="md" data-m="light" title="라이트 모드" aria-label="라이트 모드" aria-pressed="false"><svg viewBox="0 0 16 16"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-9.6a.7.7 0 0 1 .7.7v1a.7.7 0 0 1-1.4 0v-1a.7.7 0 0 1 .7-.7zm0 11.8a.7.7 0 0 1 .7.7v1a.7.7 0 0 1-1.4 0v-1a.7.7 0 0 1 .7-.7zM1.4 8a.7.7 0 0 1 .7-.7h1a.7.7 0 0 1 0 1.4h-1a.7.7 0 0 1-.7-.7zm11.5 0a.7.7 0 0 1 .7-.7h1a.7.7 0 0 1 0 1.4h-1a.7.7 0 0 1-.7-.7zM3.3 3.3a.7.7 0 0 1 1 0l.7.7a.7.7 0 1 1-1 1l-.7-.7a.7.7 0 0 1 0-1zm7.7 7.7a.7.7 0 0 1 1 0l.7.7a.7.7 0 0 1-1 1l-.7-.7a.7.7 0 0 1 0-1zm1.7-7.7a.7.7 0 0 1 0 1l-.7.7a.7.7 0 1 1-1-1l.7-.7a.7.7 0 0 1 1 0zM5 11a.7.7 0 0 1 0 1l-.7.7a.7.7 0 0 1-1-1l.7-.7a.7.7 0 0 1 1 0z"/></svg></button>
+    <button class="md" data-m="dark" title="다크 모드" aria-label="다크 모드" aria-pressed="false"><svg viewBox="0 0 16 16"><path d="M13.3 9.6A5.6 5.6 0 0 1 6.4 2.7a.6.6 0 0 0-.8-.7 6.8 6.8 0 1 0 8.4 8.4.6.6 0 0 0-.7-.8z"/></svg></button>
+  </div>
+</header>
+
+<div class="controls">
+  <div id="ops" class="ops"></div>
+  <span class="glabel">셀 데이터</span>
+  <div id="dataGrp" class="ops"></div>
+  <div class="spacer"></div>
+  <div class="tbar">
+    <button class="tb" id="btnPrev" title="이전 단계" aria-label="이전 단계"><svg viewBox="0 0 16 16"><path d="M4 2h2v12H4zM13 2v12L6 8z"/></svg></button>
+    <button class="tb" id="btnPlay" title="재생 / 일시정지" aria-label="재생 또는 일시정지"><svg viewBox="0 0 16 16"><path id="playIcon" d="M4 2l9 6-9 6z"/></svg></button>
+    <button class="tb" id="btnNext" title="다음 단계" aria-label="다음 단계"><svg viewBox="0 0 16 16"><path d="M10 2h2v12h-2zM3 2l7 6-7 6z"/></svg></button>
+    <button class="tb" id="btnReset" title="처음부터" aria-label="처음부터"><svg viewBox="0 0 16 16"><path d="M8 2.5A5.5 5.5 0 1 0 13.5 8h-1.6A3.9 3.9 0 1 1 8 4.1V6.6L11.6 3.5 8 .4z"/></svg></button>
+    <div class="speed" id="speed"></div>
+    <div class="speed"><button class="sp" id="btnSbar" aria-pressed="true" title="스크롤 시 상단 상태 바 표시">상단 바</button></div>
+  </div>
+</div>
+
+<section class="card pcard">
+  <div class="pgrid">
+    <div class="prm">
+      <div class="row"><span>셀 커패시터 C<sub>s</sub></span><b id="vCs">10 fF</b></div>
+      <input type="range" id="rCs" min="4" max="24" step="1" value="10">
+    </div>
+    <div class="prm">
+      <div class="row"><span>비트라인 기생 C<sub>BL</sub></span><b id="vCbl">30 fF</b></div>
+      <input type="range" id="rCbl" min="10" max="70" step="1" value="30">
+    </div>
+    <div class="prm">
+      <div class="row"><span>SA offset <s>V<sub>t</sub> 미스매치</s></span><b id="vVos">25 mV</b></div>
+      <input type="range" id="rVos" min="0" max="140" step="5" value="25">
+    </div>
+    <div class="prm">
+      <div class="row"><span>셀 전하 손실 <s>retention</s></span><b id="vLoss">0 mV</b></div>
+      <input type="range" id="rLoss" min="0" max="520" step="10" value="0">
+    </div>
+  </div>
+</section>
+
+<section class="steps">
+  <div class="chips" id="chips"></div>
+  <div class="narr">
+    <div class="no" id="stepNo">1</div>
+    <div>
+      <p id="stepTitle"><span class="cmd" id="stepCmd">IDLE</span><span id="stepTitleText">Precharge 상태</span></p>
+      <p id="stepDesc"></p>
+    </div>
+  </div>
+</section>
+
+<div class="stage">
+
+  <figure class="card" style="margin:0">
+    <h2>센스앰프 회로 · folded bit line</h2>
+    <p class="hint">BL 쌍 사이에 equalizer와 cross-coupled latch가 놓인다. 초록 점은 전하 이동(conventional current +)이다.</p>
+    <svg id="cir" viewBox="30 32 582 542" role="img" aria-label="DRAM 센스앰프 회로도">
+      <rect id="latchBox" x="266" y="376" width="148" height="142" rx="6" fill="none" stroke-dasharray="4 4"/>
+      <line id="latchLead" x1="436" y1="380" x2="410" y2="380" stroke-dasharray="3 3"/>
+      <text class="lb2" x="440" y="384">cross-coupled latch</text>
+
+      <line id="bl"  x1="250" y1="80" x2="250" y2="534" stroke-linecap="round"/>
+      <line id="blb" x1="430" y1="80" x2="430" y2="534" stroke-linecap="round"/>
+
+      <line id="wl0" x1="40" y1="170" x2="300" y2="170" stroke-linecap="round"/>
+      <line id="wlm" x1="380" y1="170" x2="596" y2="170" stroke-linecap="round" stroke-dasharray="5 4"/>
+
+      <g id="cellL">
+        <line class="lead" x1="250" y1="150" x2="228" y2="150"/>
+        <rect id="chan" x="184" y="147" width="44" height="6" rx="2"/>
+        <line id="gate0" x1="180" y1="170" x2="232" y2="170" stroke-linecap="round"/>
+        <line class="lead" x1="184" y1="150" x2="162" y2="150"/>
+        <line class="lead" x1="162" y1="150" x2="162" y2="190"/>
+        <line class="plate" x1="136" y1="190" x2="188" y2="190"/>
+        <rect id="capFill" x="137" y="191" width="50" height="18" rx="1"/>
+        <line class="plate" x1="136" y1="210" x2="188" y2="210"/>
+        <line class="lead" x1="162" y1="210" x2="162" y2="240"/>
+        <line class="plate2" x1="146" y1="240" x2="178" y2="240"/>
+        <circle class="node" cx="250" cy="150" r="3.6"/>
+      </g>
+
+      <g id="cellR" opacity="0.34">
+        <line class="lead" x1="430" y1="150" x2="452" y2="150"/>
+        <rect class="chanoff" x="452" y="147" width="44" height="6" rx="2"/>
+        <line class="gateoff" x1="448" y1="170" x2="500" y2="170" stroke-linecap="round"/>
+        <line class="lead" x1="496" y1="150" x2="518" y2="150"/>
+        <line class="lead" x1="518" y1="150" x2="518" y2="190"/>
+        <line class="plate" x1="492" y1="190" x2="544" y2="190"/>
+        <line class="plate" x1="492" y1="210" x2="544" y2="210"/>
+        <line class="lead" x1="518" y1="210" x2="518" y2="240"/>
+        <line class="plate2" x1="502" y1="240" x2="534" y2="240"/>
+        <circle class="node" cx="430" cy="150" r="3.6"/>
+      </g>
+
+      <text class="lb2" x="340" y="236" text-anchor="middle">Precharge · Equalizer</text>
+      <g id="eqBlk">
+        <line class="lead" x1="250" y1="280" x2="318" y2="280"/>
+        <line class="lead" x1="362" y1="280" x2="430" y2="280"/>
+        <rect id="chEQ" x="318" y="277" width="44" height="6" rx="2"/>
+        <line class="gateEq" id="gEQ0" x1="314" y1="262" x2="366" y2="262" stroke-linecap="round"/>
+        <line class="lead" x1="250" y1="326" x2="286" y2="326"/>
+        <line class="lead" x1="330" y1="326" x2="350" y2="326"/>
+        <line class="lead" x1="394" y1="326" x2="430" y2="326"/>
+        <rect id="chPC1" x="286" y="323" width="44" height="6" rx="2"/>
+        <rect id="chPC2" x="350" y="323" width="44" height="6" rx="2"/>
+        <line class="gateEq" id="gEQ1" x1="282" y1="308" x2="334" y2="308" stroke-linecap="round"/>
+        <line class="gateEq" id="gEQ2" x1="346" y1="308" x2="398" y2="308" stroke-linecap="round"/>
+        <line class="lead" x1="340" y1="326" x2="340" y2="352"/>
+        <line class="plate2" x1="324" y1="352" x2="356" y2="352"/>
+        <circle class="node" cx="250" cy="280" r="3.6"/><circle class="node" cx="430" cy="280" r="3.6"/>
+        <circle class="node" cx="250" cy="326" r="3.6"/><circle class="node" cx="430" cy="326" r="3.6"/>
+        <circle class="node" cx="340" cy="326" r="3.6"/>
+      </g>
+      <text class="lb2" x="364" y="356">V<tspan font-size="9" dy="2">BLP</tspan></text>
+
+      <rect id="bandP" x="274" y="394" width="132" height="42" rx="9" fill="var(--hi)" fill-opacity=".08"/>
+      <rect id="bandN" x="274" y="450" width="132" height="42" rx="9" fill="var(--lo)" fill-opacity=".08"/>
+      <line class="ldr" x1="410" y1="415" x2="436" y2="415" stroke-dasharray="3 3"/>
+      <line class="ldr" x1="410" y1="471" x2="436" y2="471" stroke-dasharray="3 3"/>
+      <text class="lbP" x="440" y="419">PMOS pair · SAP</text>
+      <text class="lbN" x="440" y="475">NMOS pair · SAN</text>
+
+      <line id="sapRail" x1="290" y1="390" x2="390" y2="390" stroke-linecap="round"/>
+      <line id="sanRail" x1="290" y1="496" x2="390" y2="496" stroke-linecap="round"/>
+      <text class="lb2" id="tSAPl" x="340" y="384" text-anchor="middle">SAP</text>
+      <text class="lb2" id="tSANl" x="340" y="512" text-anchor="middle">SAN</text>
+
+      <g id="latch">
+        <line class="leadA" x1="290" y1="390" x2="290" y2="400"/>
+        <line class="leadA" x1="290" y1="430" x2="290" y2="456"/>
+        <line class="leadA" x1="290" y1="486" x2="290" y2="496"/>
+        <line class="leadA" x1="250" y1="443" x2="290" y2="443"/>
+        <line class="leadB" x1="390" y1="390" x2="390" y2="400"/>
+        <line class="leadB" x1="390" y1="430" x2="390" y2="456"/>
+        <line class="leadB" x1="390" y1="486" x2="390" y2="496"/>
+        <line class="leadB" x1="390" y1="443" x2="430" y2="443"/>
+        <rect id="chP1" x="287" y="400" width="6" height="30" rx="2"/>
+        <rect id="chN1" x="287" y="456" width="6" height="30" rx="2"/>
+        <rect id="chP2" x="387" y="400" width="6" height="30" rx="2"/>
+        <rect id="chN2" x="387" y="456" width="6" height="30" rx="2"/>
+        <line class="gateB" id="gP1" x1="308" y1="400" x2="308" y2="430" stroke-linecap="round"/>
+        <line class="gateB" id="gN1" x1="308" y1="456" x2="308" y2="486" stroke-linecap="round"/>
+        <line class="gateA" id="gP2" x1="372" y1="400" x2="372" y2="430" stroke-linecap="round"/>
+        <line class="gateA" id="gN2" x1="372" y1="456" x2="372" y2="486" stroke-linecap="round"/>
+        <line class="leadA" x1="290" y1="443" x2="372" y2="415"/>
+        <line class="leadA" x1="290" y1="443" x2="372" y2="471"/>
+        <line class="leadB" x1="390" y1="443" x2="308" y2="415"/>
+        <line class="leadB" x1="390" y1="443" x2="308" y2="471"/>
+        <circle id="bubP1" cx="299" cy="415" r="4.3" fill="var(--panel)" stroke-width="1.8"/>
+        <circle id="bubP2" cx="381" cy="415" r="4.3" fill="var(--panel)" stroke-width="1.8"/>
+        <circle class="node" cx="250" cy="443" r="3.6"/><circle class="node" cx="430" cy="443" r="3.6"/>
+      </g>
+      <text class="lb2" x="264" y="447" text-anchor="end">A</text>
+      <text class="lb2" x="416" y="447">B</text>
+
+      <rect id="csBox" class="blk" x="250" y="534" width="180" height="32" rx="4"/>
+      <text class="blkT" x="340" y="554">CSL → LIO · DQ</text>
+
+      <text class="lb" x="242" y="50" text-anchor="end">BL</text>
+      <text id="tBL" class="mono" x="242" y="68" text-anchor="end">0.550 V</text>
+      <text class="lb" x="438" y="50">/BL</text>
+      <text id="tBLB" class="mono" x="438" y="68">0.550 V</text>
+      <text class="lb" x="44" y="160">WL n</text>
+      <text id="tWL" class="mono" x="44" y="196">−0.20 V</text>
+      <text class="lb2" x="596" y="160" text-anchor="end">WL m · 비선택</text>
+      <text class="lb2" x="196" y="204">C<tspan font-size="9" dy="2">s</tspan></text>
+      <text class="lb2" x="196" y="244">V<tspan font-size="9" dy="2">PL</tspan></text>
+      <text id="tCELL" class="mono" x="162" y="268" text-anchor="middle">1.100 V</text>
+      <text class="lb2" x="162" y="284" text-anchor="middle">storage node</text>
+
+      <path id="pCell" d="M162,190 L162,150 L250,150" fill="none" stroke="none"/>
+      <path id="pEQ"   d="M250,280 L430,280" fill="none" stroke="none"/>
+      <path id="pSanL" d="M250,443 L290,443 L290,496" fill="none" stroke="none"/>
+      <path id="pSanR" d="M430,443 L390,443 L390,496" fill="none" stroke="none"/>
+      <path id="pSapL" d="M290,390 L290,443 L250,443" fill="none" stroke="none"/>
+      <path id="pSapR" d="M390,390 L390,443 L430,443" fill="none" stroke="none"/>
+      <g id="dots"></g>
+
+      <g id="failBadge" opacity="0">
+        <rect x="46" y="428" width="176" height="48" rx="7"/>
+        <text class="failT" x="134" y="448" text-anchor="middle">SENSING FAIL</text>
+        <text class="failS" x="134" y="466" text-anchor="middle">latch가 반대로 확정됨</text>
+      </g>
+    </svg>
+    <div class="legend">
+      <div><i style="background:var(--chg)"></i>전하 이동<span>— charge sharing · SAN 방전 · SAP 충전 · restore 경로</span></div>
+      <div><i style="background:var(--hi)"></i>고전위 (VDD)<span> / </span><i style="background:var(--lo)"></i>저전위 (VSS)<span>— 노드 전압을 색으로 표시</span></div>
+      <div><i style="background:var(--sa)"></i>켜진 트랜지스터 채널<span>— 회색은 off</span></div>
+      <div><i style="background:var(--hi)"></i>PMOS 쌍 (SAP)<span> / </span><i style="background:var(--lo)"></i>NMOS 쌍 (SAN)<span>— 게이트의 버블이 PMOS 표시. 동작 중인 쌍의 밴드가 진해진다</span></div>
+    </div>
+  </figure>
+
+  <div class="side">
+    <aside class="card" style="margin:0">
+      <h2>실시간 노드 전압</h2>
+      <p class="hint">SAN/SAP은 래치의 전원 레일이다. 두 레일이 열리는 순간이 증폭 구간이다.</p>
+      <div class="meter"><div class="row"><span>WL n</span><span class="v" id="mWL">−0.20 V</span></div><div class="bar"><u id="bWL"></u></div></div>
+      <div class="meter"><div class="row"><span>BL (node A)</span><span class="v" id="mBL">0.550 V</span></div><div class="bar"><b style="left:50%"></b><u id="bBL"></u></div></div>
+      <div class="meter"><div class="row"><span>/BL (node B)</span><span class="v" id="mBLB">0.550 V</span></div><div class="bar"><b style="left:50%"></b><u id="bBLB"></u></div></div>
+      <div class="meter"><div class="row"><span>Storage node</span><span class="v" id="mCELL">1.100 V</span></div><div class="bar"><b style="left:50%"></b><u id="bCELL"></u></div></div>
+      <div class="meter"><div class="row"><span>SAN / SAP</span><span class="v" id="mSA">0.55 / 0.55 V</span></div><div class="bar"><b style="left:50%"></b><u id="bSAN"></u><u id="bSAP"></u></div></div>
+    </aside>
+
+    <aside class="card" style="margin:0">
+      <h2>센싱 마진 분석</h2>
+      <p class="hint">ΔV가 offset 밴드(빨강) 안에 들어오면 래치는 데이터가 아니라 미스매치 방향으로 확정된다.</p>
+      <svg id="mg" viewBox="0 0 360 150" role="img" aria-label="센싱 마진 다이어그램"></svg>
+      <div class="dvbox" style="margin-top:6px">
+        <div class="k">ΔV<sub>BL</sub> = C<sub>s</sub>/(C<sub>s</sub>+C<sub>BL</sub>) × (V<sub>cell</sub> − VDD/2)</div>
+        <div class="val" id="mDV">+138 mV</div>
+      </div>
+      <div class="verdict ok" id="verdict"><b id="vTitle">PASS</b><span id="vText">ΔV가 offset보다 크므로 데이터 방향으로 래치된다.</span></div>
+      <div class="params">
+        <div><span>C<sub>s</sub> / (C<sub>s</sub>+C<sub>BL</sub>)</span><span id="pRatio">0.250</span></div>
+        <div><span>V<sub>cell</sub> (손실 후)</span><span id="pVcell">1.100 V</span></div>
+        <div><span>|ΔV| − V<sub>os</sub></span><span id="pMg">113 mV</span></div>
+        <div><span>셀 데이터 → 읽힌 데이터</span><span id="pData">1 → 1</span></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="bottom">
+  <figure class="card" style="margin:0">
+    <h2>타이밍 다이어그램</h2>
+    <p class="hint" id="tlHint">밝은 구간이 지금까지 진행한 시퀀스다. 아래 확대창은 BL − /BL 차분을 offset 밴드와 함께 보여준다.</p>
+    <svg id="tl" viewBox="0 0 1000 412" role="img" aria-label="센스앰프 타이밍 다이어그램"></svg>
+  </figure>
+</div>
+
+<footer>
+  <span>VDD = 1.1 V, VBLP = 0.55 V, VPP = 2.5 V 기준</span>
+  <span>SA offset은 래치 트랜지스터 V<sub>t</sub> 미스매치·BL 커플링을 등가 입력 오프셋으로 묶어 표현</span>
+  <span>시간 축 비율은 이해를 위한 것으로 실제 tRCD·tRAS와 다르다</span>
+</footer>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+var VDD=1.1, VH=0.55, VPP=2.5, VBB=-0.2;
+var P={cs:10,cbl:30,vos:25,loss:0,data:1};
+
+function clamp(v,a,b){return v<a?a:(v>b?b:v);}
+function lerp(a,b,t){return a+(b-a)*t;}
+function ease(t){return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+function $(id){return document.getElementById(id);}
+
+var C={};
+function readColors(){
+  var cs=getComputedStyle(document.documentElement);
+  ["wl","bl","blb","chg","sa","dim","off","ink","ink2","ink3","panel","rule","lo","hi","bad","good"].forEach(function(k){
+    C[k]=cs.getPropertyValue("--"+k).trim();
+  });
+}
+function hex(c){
+  c=(c||"#888888").trim();
+  if(c.charAt(0)!=="#"){var m=c.match(/-?\d+(\.\d+)?/g); return (m&&m.length>=3)?[+m[0],+m[1],+m[2]]:[136,136,136];}
+  c=c.replace("#",""); if(c.length===3) c=c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
+  return [parseInt(c.slice(0,2),16),parseInt(c.slice(2,4),16),parseInt(c.slice(4,6),16)];
+}
+function mix(a,b,t){
+  t=clamp(t,0,1); var A=hex(a),B=hex(b);
+  return "rgb("+Math.round(lerp(A[0],B[0],t))+","+Math.round(lerp(A[1],B[1],t))+","+Math.round(lerp(A[2],B[2],t))+")";
+}
+function vcol(v){
+  var t=clamp(v/VDD,0,1);
+  return t<0.5? mix(C.lo,C.dim,t*2) : mix(C.dim,C.hi,(t-0.5)*2);
+}
+
+/* ---------- physics ---------- */
+function ratio(){ return P.cs/(P.cs+P.cbl); }
+function vcell(){ return P.data ? Math.max(VH+0.001, VDD-P.loss/1000) : Math.min(VH-0.001, P.loss/1000); }
+function dv(){ return ratio()*(vcell()-VH); }
+function marginMv(){ return Math.abs(dv())*1000 - P.vos; }
+function isFail(){ return marginMv()<=0; }
+function sensed(){ return isFail() ? 1-P.data : P.data; }
+
+/* ---------- sequence ---------- */
+function S(prev,over){var o={},k; for(k in prev)o[k]=prev[k]; for(k in over)o[k]=over[k]; return o;}
+function build(){
+  var vc=vcell(), d=dv(), shared=VH+d, win=sensed()===1;
+  var hi=win?VDD:0, lo=win?0:VDD;
+  var mv=(d>=0?"+":"−")+Math.round(Math.abs(d)*1000);
+  var fail=isFail();
+  var cur={wl:VBB,bl:VH,blb:VH,sn:vc,eq:1,san:VH,sap:VH,cs:0};
+  var st=[], init=cur, flows=[];
+  function add(cmd,chip,title,desc,over,fl,dur){
+    cur=S(cur,over);
+    st.push({cmd:cmd,chip:chip,title:title,desc:desc,sig:cur,flows:fl||[],dur:dur});
+  }
+  add("IDLE","Precharge","BL 쌍이 VDD/2로 묶여 있다",
+    "Equalizer 3개가 BL과 /BL을 서로 단락시키고 동시에 V<sub>BLP</sub> = 0.55 V로 고정한다. 두 라인을 정확히 같은 전위로 맞춰 두어야, 뒤에 실릴 수십 mV의 차분이 의미를 갖는다. 셀은 데이터 '"+P.data+"'을 전하로 들고 있다.",
+    {}, [], 2000);
+  add("ACT","EQ off","Equalizer를 끊어 BL을 floating 시킨다",
+    "ACT가 들어오면 먼저 EQ를 닫는다. 이 순간부터 BL은 C<sub>BL</sub> = "+P.cbl+" fF 라는 큰 커패시터로만 존재하며, 여기에 실리는 전하량이 곧 신호가 된다.",
+    {eq:0}, [], 1700);
+  add("ACT","WL 활성화","Word line을 VPP로 올린다",
+    "선택된 WL만 2.5 V로 부스팅한다. VDD + V<sub>t</sub> 이상이어야 access transistor가 전압 손실 없이 full level을 통과시킨다.",
+    {wl:VPP}, [], 1900);
+  add("ACT","Charge sharing","전하가 나뉘며 ΔV가 생긴다",
+    "C<sub>s</sub> = "+P.cs+" fF와 C<sub>BL</sub> = "+P.cbl+" fF가 전하를 나눠 갖는다. ΔV = "+ratio().toFixed(3)+" × ("+vcell().toFixed(2)+" − 0.55) = "+mv+" mV. 셀 전압도 BL과 같아지므로 읽기는 파괴적(destructive)이다.",
+    {bl:shared,sn:shared}, [{p:"pCell",d:P.data?1:-1}], 2600);
+  add("ACT","마진 판정","ΔV와 SA offset을 비교한다",
+    fail
+      ? "래치 트랜지스터의 V<sub>t</sub> 미스매치를 등가 입력 오프셋으로 보면 "+P.vos+" mV다. 지금 |ΔV| = "+Math.round(Math.abs(d)*1000)+" mV는 이보다 작다. <em>신호가 오프셋에 묻혀 래치는 데이터가 아니라 미스매치 방향으로 확정된다.</em>"
+      : "등가 입력 오프셋 "+P.vos+" mV 대비 |ΔV| = "+Math.round(Math.abs(d)*1000)+" mV, 마진은 "+Math.round(marginMv())+" mV다. 이 차이가 남아 있어야 래치가 데이터 방향으로 기울어진다. 증폭 직전의 이 한 순간이 sensing의 전부다.",
+    {}, [], 2400);
+  var sn5 = win ? shared : shared*0.30;
+  var sn6 = win ? shared + 0.72*(VDD-shared) : sn5*0.25;
+  add("ACT","NMOS SA","SAN을 VSS로 내려 낮은 쪽을 끌어내린다",
+    "교차 결합된 NMOS 쌍이 먼저 동작한다. 전압이 낮은 라인 쪽 NMOS가 상대적으로 덜 켜지므로, 반대쪽이 먼저 GND로 빨려 내려가며 positive feedback이 걸린다. "
+      +(win
+        ? "셀이 붙은 BL은 높은 쪽이라 SAP이 열릴 때까지 기다린다."
+        : "셀은 WL로 BL에 붙어 있어 같이 내려가지만, access transistor의 on 저항과 C<sub>s</sub> 때문에 BL보다 느리게 따라온다.")
+      +(fail?" <em>여기서 이미 잘못된 라인이 내려가고 있다.</em>":""),
+    {san:0,bl:win?shared:0,blb:win?0:VH,sn:sn5},
+    win?[{p:"pSanR",d:1}]:[{p:"pSanL",d:1},{p:"pCell",d:1}], 2500);
+  add("ACT","PMOS SA","SAP을 VDD로 올려 full swing 시킨다",
+    "한쪽이 충분히 내려간 뒤 PMOS 쌍을 켜서 반대쪽을 VDD까지 끌어올린다. BL 쌍은 여기서 VDD / VSS로 확정되지만, <b>셀 노드는 아직 full level이 아니다.</b> BL은 SA가 직접 구동하는 반면 셀은 access transistor를 통해서만 충·방전되므로 한 박자 뒤처진다.",
+    {sap:VDD,bl:hi,blb:lo,sn:sn6},
+    win?[{p:"pSapL",d:1},{p:"pCell",d:-1}]:[{p:"pSapR",d:1}], 2400);
+  add("ACT","Restore","셀이 full level을 따라잡는다",
+    "BL은 이미 확정돼 있고, 이 구간에서 뒤처져 있던 셀 노드가 나머지를 채워 "+(win?"full VDD":"완전한 VSS")+"에 도달한다."
+      +(win?" WL이 VPP이므로 V<sub>t</sub> 손실 없이 1.1 V까지 올라간다.":"")
+      +" 읽기가 파괴적인데도 데이터가 남는 이유이며, 이 write-back 시간이 tRAS의 대부분이다. 여기서 PRE를 일찍 걸면 셀이 덜 찬 채로 닫혀 그 자체가 weak cell이 된다."
+      +(fail?" <em>복원되는 값은 원래 데이터가 아니라 잘못 래치된 '"+sensed()+"'이다.</em>":""),
+    {sn:hi}, [{p:"pCell",d:(win?-1:1)}], 2400);
+  add("PRE","WL off · PRE","WL을 닫고 다시 precharge 한다",
+    "WL을 V<sub>BB</sub>로 내려 셀을 고립시키고, SAN/SAP을 끄고 equalizer를 켜 BL 쌍을 VDD/2로 되돌린다. 이 회복 구간이 tRP다.",
+    {wl:VBB,eq:1,san:VH,sap:VH,bl:VH,blb:VH},
+    [{p:"pEQ",d:win?1:-1}], 2200);
+  return {init:init,steps:st};
+}
+
+var state={init:null,steps:[],idx:0,elapsed:0,playing:false,settling:false,speed:1,entry:null,cur:null,phase:0};
+
+/* ---------- dots ---------- */
+var SVGNS="http://www.w3.org/2000/svg";
+var NDOT=6, dotPool=[], paths={};
+(function(){
+  var g=$("dots"), i;
+  ["pCell","pEQ","pSanL","pSanR","pSapL","pSapR"].forEach(function(id){
+    var p=$(id); paths[id]={el:p,len:p.getTotalLength()};
+  });
+  for(i=0;i<NDOT*2;i++){
+    var c=document.createElementNS(SVGNS,"circle");
+    c.setAttribute("r","3.6"); c.setAttribute("cx","-99"); c.setAttribute("cy","-99");
+    g.appendChild(c); dotPool.push(c);
+  }
+})();
+function placeDots(flows,phase){
+  var n=0,k,i;
+  for(k=0;k<flows.length && k<2;k++){
+    var f=flows[k], pp=paths[f.p];
+    if(!pp) continue;
+    for(i=0;i<NDOT;i++){
+      var d=dotPool[n++]; if(!d) break;
+      var u=(phase + i/NDOT)%1, pos=f.d>0?u:1-u;
+      var pt=pp.el.getPointAtLength(pos*pp.len);
+      d.setAttribute("cx",pt.x.toFixed(1)); d.setAttribute("cy",pt.y.toFixed(1));
+      d.setAttribute("fill",C.chg);
+      d.setAttribute("opacity",(0.22+0.78*Math.sin(u*Math.PI)).toFixed(2));
+    }
+  }
+  for(;n<dotPool.length;n++) dotPool[n].setAttribute("opacity","0");
+}
+
+/* ---------- circuit render ---------- */
+function setStroke(id,col,w){var e=$(id); e.setAttribute("stroke",col); if(w) e.setAttribute("stroke-width",w);}
+function renderCircuit(s){
+  var fail=isFail(), showFail = fail && state.idx>=4;
+  setStroke("bl",vcol(s.bl),3.2); setStroke("blb",vcol(s.blb),3.2);
+  var wlT=clamp((s.wl-VBB)/(VPP-VBB),0,1);
+  setStroke("wl0",mix(C.off,C.wl,wlT),3);
+  setStroke("gate0",mix(C.off,C.wl,wlT),6);
+  setStroke("wlm",C.off,2.2);
+  $("chan").setAttribute("fill", wlT>0.45? C.sa : C.dim);
+
+  var eqOn=s.eq>0.5;
+  ["gEQ0","gEQ1","gEQ2"].forEach(function(id){ setStroke(id, eqOn?C.sa:C.off, 6); });
+  ["chEQ","chPC1","chPC2"].forEach(function(id){ $(id).setAttribute("fill", eqOn?C.sa:C.dim); });
+
+  setStroke("sapRail", vcol(s.sap), 3);
+  setStroke("sanRail", vcol(s.san), 3);
+  $("tSAPl").setAttribute("fill", s.sap>0.8?C.hi:C.ink3);
+  $("tSANl").setAttribute("fill", s.san<0.25?C.lo:C.ink3);
+
+  var nOn=s.san<0.3, pOn=s.sap>0.8;
+  $("chN1").setAttribute("fill", (nOn&&s.blb>0.35)?C.sa:C.dim);
+  $("chN2").setAttribute("fill", (nOn&&s.bl>0.35)?C.sa:C.dim);
+  $("chP1").setAttribute("fill", (pOn&&s.blb<0.75)?C.sa:C.dim);
+  $("chP2").setAttribute("fill", (pOn&&s.bl<0.75)?C.sa:C.dim);
+
+  var ca=vcol(s.bl), cb=vcol(s.blb);
+  Array.prototype.forEach.call(document.querySelectorAll("#latch .leadA"),function(e){e.setAttribute("stroke",ca);});
+  Array.prototype.forEach.call(document.querySelectorAll("#latch .leadB"),function(e){e.setAttribute("stroke",cb);});
+  setStroke("gP2",ca,5); setStroke("gN2",ca,5);
+  setStroke("gP1",cb,5); setStroke("gN1",cb,5);
+  $("bubP1").setAttribute("stroke",cb);
+  $("bubP2").setAttribute("stroke",ca);
+  $("bandP").setAttribute("fill-opacity", pOn?0.2:0.08);
+  $("bandN").setAttribute("fill-opacity", nOn?0.2:0.08);
+
+  var h=clamp(s.sn/VDD,0,1)*18;
+  var cf=$("capFill");
+  cf.setAttribute("y",(209-h).toFixed(1)); cf.setAttribute("height",h.toFixed(1));
+  cf.setAttribute("fill",vcol(s.sn));
+
+  $("latchBox").setAttribute("stroke", showFail?C.bad:C.rule);
+  $("latchBox").setAttribute("stroke-width", showFail?1.6:1);
+  $("latchLead").setAttribute("stroke",C.rule);
+  var fb=$("failBadge");
+  fb.setAttribute("opacity", showFail?1:0);
+  fb.classList.toggle("failpulse",showFail);
+  fb.querySelector("rect").setAttribute("fill","none");
+  fb.querySelector("rect").setAttribute("stroke",C.bad);
+
+  $("tBL").textContent=s.bl.toFixed(3)+" V";
+  $("tBLB").textContent=s.blb.toFixed(3)+" V";
+  $("tWL").textContent=(s.wl<0?"−":"")+Math.abs(s.wl).toFixed(2)+" V";
+  $("tCELL").textContent=s.sn.toFixed(3)+" V";
+  $("tBL").setAttribute("fill",vcol(s.bl));
+  $("tBLB").setAttribute("fill",vcol(s.blb));
+  $("tCELL").setAttribute("fill",vcol(s.sn));
+  $("tWL").setAttribute("fill",mix(C.off,C.wl,wlT));
+}
+
+/* ---------- meters ---------- */
+function bar(id,frac,col){var u=$(id); u.style.width=(clamp(frac,0,1)*100).toFixed(1)+"%"; u.style.background=col;}
+function renderMeters(s){
+  $("mWL").textContent=(s.wl<0?"−":"")+Math.abs(s.wl).toFixed(2)+" V";
+  bar("bWL",(s.wl-VBB)/(VPP-VBB),mix(C.off,C.wl,clamp((s.wl-VBB)/(VPP-VBB),0,1)));
+  $("mBL").textContent=s.bl.toFixed(3)+" V"; bar("bBL",s.bl/VDD,vcol(s.bl));
+  $("mBLB").textContent=s.blb.toFixed(3)+" V"; bar("bBLB",s.blb/VDD,vcol(s.blb));
+  $("mCELL").textContent=s.sn.toFixed(3)+" V"; bar("bCELL",s.sn/VDD,vcol(s.sn));
+  $("mSA").textContent=s.san.toFixed(2)+" / "+s.sap.toFixed(2)+" V";
+  var u=$("bSAN"); u.style.width=(clamp(s.san/VDD,0,1)*100).toFixed(1)+"%"; u.style.background=C.lo; u.style.opacity=".55";
+  var v=$("bSAP"); v.style.width=(clamp(s.sap/VDD,0,1)*100).toFixed(1)+"%"; v.style.background=C.hi; v.style.opacity=".55";
+}
+
+/* ---------- margin diagram ---------- */
+function el(tag,a){var e=document.createElementNS(SVGNS,tag);for(var k in a)e.setAttribute(k,a[k]);return e;}
+function txt(p,x,y,s,fill,size,anchor){
+  var t=el("text",{x:x,y:y,fill:fill,"font-size":size||11,"font-family":"'JetBrains Mono','Noto Sans KR',monospace"});
+  if(anchor)t.setAttribute("text-anchor",anchor);
+  t.textContent=s; p.appendChild(t); return t;
+}
+function drawMargin(){
+  var svg=$("mg"); while(svg.firstChild) svg.removeChild(svg.firstChild);
+  var cx=180, k=0.46, fail=isFail();
+  var d=dv()*1000, vos=P.vos, X0=24, X1=336;
+  var TY=62, TH=18, TB=TY+TH, half=Math.max(vos*k,1.2);
+
+  var defs=el("defs",{});
+  var gr=el("linearGradient",{id:"dzg",x1:"0",y1:"0",x2:"1",y2:"0"});
+  [[0,.02],[.24,.2],[.5,.26],[.76,.2],[1,.02]].forEach(function(s){
+    gr.appendChild(el("stop",{offset:(s[0]*100)+"%","stop-color":C.bad,"stop-opacity":s[1]}));
+  });
+  defs.appendChild(gr); svg.appendChild(defs);
+
+  svg.appendChild(el("rect",{x:X0,y:TY,width:X1-X0,height:TH,rx:TH/2,fill:C.good,"fill-opacity":.10}));
+  svg.appendChild(el("rect",{x:X0,y:TY,width:X1-X0,height:TH,rx:TH/2,fill:"none",stroke:C.rule,"stroke-width":1}));
+  svg.appendChild(el("rect",{x:cx-half,y:TY,width:half*2,height:TH,fill:"url(#dzg)"}));
+  [cx-half,cx+half].forEach(function(x){
+    svg.appendChild(el("line",{x1:x,y1:TY-8,x2:x,y2:TB+8,stroke:C.bad,"stroke-opacity":.45,
+      "stroke-width":1,"stroke-dasharray":"3 3"}));
+  });
+  svg.appendChild(el("line",{x1:cx,y1:TY+3,x2:cx,y2:TB-3,stroke:C.bad,"stroke-opacity":.3,"stroke-width":1}));
+  txt(svg,cx,TY-16,"offset ±"+vos+" mV",C.bad,10.5,"middle");
+  txt(svg,cx,TY-30,"판정 불가 구간",C.ink3,10,"middle");
+
+  var x=clamp(cx+d*k,X0+6,X1-6), mc=fail?C.bad:C.good;
+  svg.appendChild(el("line",{x1:x,y1:TY-4,x2:x,y2:TB+4,stroke:mc,"stroke-width":2,"stroke-linecap":"round"}));
+  svg.appendChild(el("circle",{cx:x,cy:TY+TH/2,r:5.2,fill:mc,stroke:"var(--panel)","stroke-width":1.6}));
+  txt(svg,clamp(x,52,308),TB+26,"ΔV "+(d>=0?"+":"−")+Math.round(Math.abs(d))+" mV",mc,12,"middle");
+  txt(svg,X0,TB+48,"← /BL 승 · 데이터 0",C.ink3,10,"start");
+  txt(svg,X1,TB+48,"데이터 1 · BL 승 →",C.ink3,10,"end");
+}
+
+/* ---------- timing ---------- */
+var SAMP=14, series=null, totalDur=0;
+function sampleAll(){
+  var arr={t:[],wl:[],eq:[],san:[],sap:[],bl:[],blb:[],sn:[]}, i,j,acc=0;
+  for(i=0;i<state.steps.length;i++){
+    var st=state.steps[i], from=i?state.steps[i-1].sig:state.init;
+    for(j=0;j<=SAMP;j++){
+      var u=j/SAMP, e=ease(u);
+      arr.t.push(acc+u*st.dur);
+      ["wl","eq","san","sap","bl","blb","sn"].forEach(function(k){
+        arr[k].push(k==="eq"? st.sig.eq : lerp(from[k],st.sig[k],e));
+      });
+    }
+    acc+=st.dur;
+  }
+  totalDur=acc; series=arr; return arr;
+}
+function drawTimeline(){
+  var svg=$("tl"); while(svg.firstChild) svg.removeChild(svg.firstChild);
+  if(!series) return;
+  var X0=82, X1=980, W=X1-X0, fail=isFail();
+  var TOP=44, BOT=376;
+  function tx(t){return X0+(t/totalDur)*W;}
+
+  var items=[{l:"BL",c:C.bl},{l:"/BL",c:C.blb},{l:"셀 노드",c:C.chg,d:1},{l:"ΔV = BL − /BL",c:fail?C.bad:C.good}];
+  var widths=items.map(function(it){
+    var kw=(it.l.match(/[가-힣]/g)||[]).length;
+    return 16+8+(kw*11+(it.l.length-kw)*6.4)+16;
+  });
+  var lx=X1-widths.reduce(function(a,b){return a+b;},0);
+  items.forEach(function(it,i){
+    svg.appendChild(el("line",{x1:lx,y1:18,x2:lx+16,y2:18,stroke:it.c,"stroke-width":2.6,
+      "stroke-dasharray":it.d?"4 3":"","stroke-linecap":"round"}));
+    txt(svg,lx+23,22,it.l,C.ink2,11,"start");
+    lx+=widths[i];
+  });
+
+  var acc=0,i;
+  for(i=0;i<state.steps.length;i++){
+    acc+=state.steps[i].dur;
+    svg.appendChild(el("line",{x1:tx(acc),y1:TOP-8,x2:tx(acc),y2:BOT,stroke:C.rule,"stroke-opacity":.5,
+      "stroke-width":1,"stroke-dasharray":"3 4"}));
+    txt(svg,tx(acc-state.steps[i].dur/2),BOT+22,String(i+1),C.ink3,10.5,"middle");
+  }
+
+  txt(svg,X0-12,TOP+16,"WL",C.ink3,11,"end");
+  var pts=[],j;
+  for(j=0;j<series.t.length;j++){
+    var v=clamp((series.wl[j]-VBB)/(VPP-VBB),0,1);
+    pts.push(tx(series.t[j]).toFixed(1)+","+(TOP+22-v*22).toFixed(1));
+  }
+  svg.appendChild(el("polyline",{points:pts.join(" "),fill:"none",stroke:C.wl,"stroke-width":1.9,"stroke-linejoin":"round"}));
+
+  var SY=80, SH=26;
+  txt(svg,X0-12,SY+17,"SAN / SAP",C.ink3,11,"end");
+  svg.appendChild(el("line",{x1:X0,y1:SY+SH/2,x2:X1,y2:SY+SH/2,stroke:C.rule,"stroke-opacity":.5,"stroke-width":1,"stroke-dasharray":"4 4"}));
+  [["san",C.lo],["sap",C.hi]].forEach(function(t){
+    var p=[],q;
+    for(q=0;q<series.t.length;q++) p.push(tx(series.t[q]).toFixed(1)+","+(SY+SH-clamp(series[t[0]][q]/VDD,0,1)*SH).toFixed(1));
+    svg.appendChild(el("polyline",{points:p.join(" "),fill:"none",stroke:t[1],"stroke-width":1.9,"stroke-linejoin":"round"}));
+  });
+
+  var AY0=136, AY1=252;
+  function ay(v){return AY1-(v/VDD)*(AY1-AY0);}
+  [[VDD,"VDD"],[VH,"VDD/2"],[0,"0"]].forEach(function(g){
+    svg.appendChild(el("line",{x1:X0,y1:ay(g[0]),x2:X1,y2:ay(g[0]),stroke:C.rule,"stroke-opacity":.55,
+      "stroke-width":1,"stroke-dasharray":g[0]===VH?"4 4":""}));
+    txt(svg,X0-12,ay(g[0])+4,g[1],C.ink3,10.5,"end");
+  });
+  [["sn",C.chg],["blb",C.blb],["bl",C.bl]].forEach(function(t){
+    var p=[],q;
+    for(q=0;q<series.t.length;q++) p.push(tx(series.t[q]).toFixed(1)+","+ay(series[t[0]][q]).toFixed(1));
+    svg.appendChild(el("polyline",{points:p.join(" "),fill:"none",stroke:t[1],"stroke-width":t[0]==="sn"?1.6:2.2,
+      "stroke-dasharray":t[0]==="sn"?"5 3":"","stroke-linejoin":"round"}));
+  });
+
+  var DY=320, span=Math.max(Math.abs(dv())*1000, P.vos, 40)*2.1;
+  function dy(mv){return DY-(mv/span)*46;}
+  svg.appendChild(el("rect",{x:X0,y:dy(P.vos),width:W,height:Math.max(dy(-P.vos)-dy(P.vos),1.5),rx:3,
+    fill:C.bad,"fill-opacity":.11}));
+  svg.appendChild(el("line",{x1:X0,y1:DY,x2:X1,y2:DY,stroke:C.rule,"stroke-opacity":.6,"stroke-width":1}));
+  txt(svg,X0-12,DY+4,"ΔV 확대",C.ink3,11,"end");
+  txt(svg,X0+6,dy(P.vos)-5,"offset ±"+P.vos+" mV",C.bad,9.5,"start");
+  var pd=[],r;
+  for(r=0;r<series.t.length;r++){
+    var diff=(series.bl[r]-series.blb[r])*1000;
+    pd.push(tx(series.t[r]).toFixed(1)+","+clamp(dy(diff),268,372).toFixed(1));
+  }
+  svg.appendChild(el("polyline",{points:pd.join(" "),fill:"none",stroke:fail?C.bad:C.good,"stroke-width":2.1,"stroke-linejoin":"round"}));
+
+  var hint=$("tlHint");
+  if(hint) hint.textContent = fail
+    ? "밝은 구간이 지금까지 진행한 시퀀스다. 아래 ΔV 확대창에서 차분이 offset 밴드를 벗어나지 못하고 반대 방향으로 확정되는 것이 보인다."
+    : "밝은 구간이 지금까지 진행한 시퀀스다. 아래 ΔV 확대창은 BL − /BL 차분이 offset 밴드 밖에서 출발해 증폭되는 과정을 보여준다.";
+
+  var cur=el("line",{id:"cursor",x1:X0,y1:TOP-8,x2:X0,y2:BOT,stroke:C.ink2,"stroke-width":1.2,"stroke-opacity":.75});
+  svg.appendChild(cur);
+  var sh=el("rect",{id:"shade",x:X0,y:TOP-8,width:0,height:BOT-TOP+8,fill:C.ink3,"fill-opacity":.07});
+  svg.insertBefore(sh,svg.firstChild);
+}
+function updateCursor(){
+  var cur=$("cursor"), sh=$("shade"); if(!cur||!series) return;
+  var acc=0,i;
+  for(i=0;i<state.idx;i++) acc+=state.steps[i].dur;
+  acc+=clamp(state.elapsed,0,state.steps[state.idx].dur);
+  var X0=82,W=898, x=X0+(acc/totalDur)*W;
+  cur.setAttribute("x1",x); cur.setAttribute("x2",x);
+  sh.setAttribute("width",Math.max(x-X0,0));
+  var pg=$("sbProg"); if(pg) pg.style.width=(clamp(acc/totalDur,0,1)*100).toFixed(2)+"%";
+}
+
+/* ---------- header + verdict ---------- */
+function renderStats(){
+  var d=dv()*1000, fail=isFail();
+  $("sDV").textContent=(d>=0?"+":"−")+Math.round(Math.abs(d))+" mV";
+  $("sMG").textContent=Math.round(marginMv())+" mV";
+  $("sMG").className=fail?"bad":"";
+  $("sVER").textContent=fail?"FAIL":"PASS";
+  $("sVER").className=fail?"bad":"good";
+  $("sbPill").textContent=fail?"FAIL":"PASS";
+  $("sbPill").className="sb-pill"+(fail?" ng":"");
+  $("mDV").textContent=(d>=0?"+":"−")+Math.round(Math.abs(d))+" mV";
+  $("mDV").style.color=fail?"var(--bad)":"var(--ink)";
+  $("pRatio").textContent=ratio().toFixed(3);
+  $("pVcell").textContent=vcell().toFixed(3)+" V";
+  $("pMg").textContent=Math.round(marginMv())+" mV";
+  $("pData").textContent=P.data+" → "+sensed();
+  $("pData").style.color=fail?"var(--bad)":"var(--ink2)";
+  var v=$("verdict");
+  v.className="verdict "+(fail?"ng":"ok");
+  $("vTitle").textContent=fail?"SENSING FAIL":"PASS";
+  $("vText").innerHTML=fail
+    ? "|ΔV| "+Math.round(Math.abs(d))+" mV ≤ offset "+P.vos+" mV. 래치가 미스매치 방향으로 확정되어 '"+sensed()+"'로 읽히고, restore도 그 값으로 덮어쓴다."
+    : "|ΔV| "+Math.round(Math.abs(d))+" mV > offset "+P.vos+" mV. "+Math.round(marginMv())+" mV의 마진으로 데이터 방향 래치가 성립한다.";
+}
+
+/* ---------- steps UI ---------- */
+function renderChips(){
+  var box=$("chips"); box.innerHTML="";
+  state.steps.forEach(function(st,i){
+    var b=document.createElement("button");
+    b.className="chip"+(i===state.idx?" now":(i<state.idx?" done":""))+((isFail()&&i>=4)?" fail":"");
+    b.innerHTML='<span class="n">'+(i+1)+'</span>'+st.chip;
+    b.addEventListener("click",function(){ state.playing=false; jumpTo(i); renderTransport(); });
+    box.appendChild(b);
+  });
+}
+function renderNarr(){
+  var st=state.steps[state.idx];
+  $("stepNo").textContent=state.idx+1;
+  $("stepCmd").textContent=st.cmd;
+  $("stepTitleText").textContent=st.title;
+  $("stepDesc").innerHTML=st.desc;
+  var c = st.cmd==="PRE"?C.ink3:(st.cmd==="IDLE"?C.ink3:C.bl);
+  $("stepCmd").style.color=c;
+  $("sbNo").textContent=state.idx+1;
+  $("sbChip").textContent=st.chip;
+  $("sbTitle").textContent=st.title;
+}
+function renderTransport(){
+  var d = state.playing?"M3 2h4v12H3zM9 2h4v12H9z":"M4 2l9 6-9 6z";
+  $("playIcon").setAttribute("d",d);
+  $("sbPlayIcon").setAttribute("d",d);
+  Array.prototype.forEach.call(document.querySelectorAll("#speed .sp"),function(b){
+    b.setAttribute("aria-pressed", (+b.dataset.v===state.speed)?"true":"false");
+  });
+}
+var sbarOn=true;
+function updateSbar(){
+  var bar=$("sbar"), anchor=document.querySelector(".steps");
+  if(!bar||!anchor) return;
+  var show = sbarOn && anchor.getBoundingClientRect().bottom < 46;
+  bar.classList.toggle("on",show);
+}
+
+/* ---------- control ---------- */
+function rebuild(keepIdx){
+  var b=build(), idx=keepIdx?clamp(state.idx,0,b.steps.length-1):0;
+  state.init=b.init; state.steps=b.steps; state.idx=idx;
+  state.entry = idx? b.steps[idx-1].sig : b.init;
+  if(!keepIdx){ state.elapsed=0; state.settling=false; }
+  else state.elapsed=clamp(state.elapsed,0,b.steps[idx].dur);
+  sampleAll(); drawTimeline(); renderChips(); renderNarr(); renderStats(); drawMargin();
+}
+function jumpTo(i){
+  if(i<0||i>=state.steps.length) return;
+  state.idx=i;
+  state.entry = i? state.steps[i-1].sig : state.init;
+  state.elapsed=0; state.settling=true;
+  renderChips(); renderNarr();
+}
+function advance(){
+  if(state.idx>=state.steps.length-1){ state.playing=false; renderTransport(); return false; }
+  state.idx++; state.entry=state.steps[state.idx-1].sig; state.elapsed=0;
+  renderChips(); renderNarr(); return true;
+}
+function togglePlay(){
+  if(!state.playing && state.idx===state.steps.length-1 && state.elapsed>=state.steps[state.idx].dur-1){
+    state.idx=0; state.entry=state.init; state.elapsed=0; renderChips(); renderNarr();
+  }
+  state.playing=!state.playing; state.settling=false; renderTransport();
+}
+
+var PRESETS={
+  normal:{label:"정상 센싱", cs:10,cbl:30,vos:25,loss:0},
+  weak:{label:"약한 셀", cs:6,cbl:45,vos:30,loss:200},
+  mismatch:{label:"SA 미스매치 fail", cs:10,cbl:30,vos:110,loss:120},
+  ret:{label:"Retention fail", cs:8,cbl:44,vos:35,loss:440}
+};
+var PORDER=["normal","weak","mismatch","ret"];
+var curPreset="normal";
+function applyPreset(k){
+  var p=PRESETS[k]; if(!p) return;
+  curPreset=k;
+  P.cs=p.cs; P.cbl=p.cbl; P.vos=p.vos; P.loss=p.loss;
+  $("rCs").value=p.cs; $("rCbl").value=p.cbl; $("rVos").value=p.vos; $("rLoss").value=p.loss;
+  syncLabels();
+  Array.prototype.forEach.call(document.querySelectorAll("#ops .op[data-k]"),function(b){
+    b.setAttribute("aria-pressed", b.dataset.k===k?"true":"false");
+  });
+  rebuild(false); state.playing=true; renderTransport();
+}
+function syncData(){
+  Array.prototype.forEach.call(document.querySelectorAll("#dataGrp .op"),function(b){
+    b.setAttribute("aria-pressed", (+b.dataset.d===P.data)?"true":"false");
+  });
+}
+function syncLabels(){
+  $("vCs").textContent=P.cs+" fF"; $("vCbl").textContent=P.cbl+" fF";
+  $("vVos").textContent=P.vos+" mV"; $("vLoss").textContent=P.loss+" mV";
+}
+function paramChanged(){
+  Array.prototype.forEach.call(document.querySelectorAll("#ops .op[data-k]"),function(b){b.setAttribute("aria-pressed","false");});
+  syncLabels(); rebuild(true);
+}
+
+/* ---------- loop ---------- */
+var last=0;
+function tick(now){
+  requestAnimationFrame(tick);
+  var dt=last?Math.min(now-last,60):0; last=now;
+  if(!state.steps.length) return;
+  if(state.playing){
+    state.settling=false;
+    state.elapsed+=dt*state.speed;
+    var guard=0;
+    while(state.playing && state.elapsed>=state.steps[state.idx].dur && guard++<20){
+      var over=state.elapsed-state.steps[state.idx].dur;
+      if(!advance()){ state.elapsed=state.steps[state.idx].dur; break; }
+      state.elapsed=over;
+    }
+  } else if(state.settling){
+    state.elapsed+=dt*state.speed;
+    if(state.elapsed>=state.steps[state.idx].dur){ state.elapsed=state.steps[state.idx].dur; state.settling=false; }
+  }
+  var st=state.steps[state.idx];
+  var t=ease(clamp(state.elapsed/st.dur,0,1)), s={};
+  ["wl","bl","blb","sn","san","sap"].forEach(function(k){ s[k]=lerp(state.entry[k],st.sig[k],t); });
+  s.eq=st.sig.eq; s.cs=st.sig.cs;
+  state.cur=s;
+  if(state.playing||state.settling) state.phase=(state.phase+dt*state.speed/1500)%1;
+  renderCircuit(s); renderMeters(s);
+  placeDots(st.flows, state.phase);
+  updateCursor();
+  if((sbTick=(sbTick+1)%6)===0) updateSbar();
+}
+var sbTick=0;
+
+/* ---------- init ---------- */
+(function init(){
+  readColors();
+  var opsBox=$("ops");
+  PORDER.forEach(function(k){
+    var b=document.createElement("button");
+    b.className="op"; b.dataset.k=k; b.textContent=PRESETS[k].label;
+    b.setAttribute("aria-pressed", k==="normal"?"true":"false");
+    b.addEventListener("click",function(){ applyPreset(k); });
+    opsBox.appendChild(b);
+  });
+  var dataBox=$("dataGrp");
+  [1,0].forEach(function(d){
+    var b=document.createElement("button");
+    b.className="op"; b.dataset.d=d; b.textContent="'"+d+"'";
+    b.style.minWidth="46px"; b.style.textAlign="center";
+    b.setAttribute("aria-pressed", d===P.data?"true":"false");
+    b.addEventListener("click",function(){
+      if(P.data===d) return;
+      P.data=d; syncData();
+      rebuild(false); state.playing=true; renderTransport();
+    });
+    dataBox.appendChild(b);
+  });
+
+  var spBox=$("speed");
+  [0.5,1,2].forEach(function(v){
+    var b=document.createElement("button");
+    b.className="sp"; b.dataset.v=v; b.textContent=v+"×";
+    b.setAttribute("aria-pressed", v===1?"true":"false");
+    b.addEventListener("click",function(){ state.speed=v; renderTransport(); });
+    spBox.appendChild(b);
+  });
+
+  $("btnPlay").addEventListener("click",togglePlay);
+  $("sbPlay").addEventListener("click",togglePlay);
+  $("sbNext").addEventListener("click",function(){ state.playing=false; jumpTo(state.idx+1); renderTransport(); });
+  $("sbPrev").addEventListener("click",function(){ state.playing=false; jumpTo(state.idx-1); renderTransport(); });
+  $("sbNo").addEventListener("click",function(){ window.scrollTo({top:0,behavior:"smooth"}); });
+  $("btnSbar").addEventListener("click",function(){
+    sbarOn=!sbarOn;
+    this.setAttribute("aria-pressed",sbarOn?"true":"false");
+    try{ localStorage.setItem("dram-sa-sbar",sbarOn?"1":"0"); }catch(err){}
+    updateSbar();
+  });
+  try{ if(localStorage.getItem("dram-sa-sbar")==="0"){ sbarOn=false; $("btnSbar").setAttribute("aria-pressed","false"); } }catch(err){}
+  window.addEventListener("scroll",updateSbar,{passive:true});
+  window.addEventListener("resize",updateSbar);
+  $("btnNext").addEventListener("click",function(){ state.playing=false; jumpTo(state.idx+1); renderTransport(); });
+  $("btnPrev").addEventListener("click",function(){ state.playing=false; jumpTo(state.idx-1); renderTransport(); });
+  $("btnReset").addEventListener("click",function(){ rebuild(false); state.playing=true; renderTransport(); });
+  document.addEventListener("keydown",function(e){
+    if(e.target.tagName==="INPUT") return;
+    if(e.key===" "){ e.preventDefault(); togglePlay(); }
+    else if(e.key==="ArrowRight"){ state.playing=false; jumpTo(state.idx+1); renderTransport(); }
+    else if(e.key==="ArrowLeft"){ state.playing=false; jumpTo(state.idx-1); renderTransport(); }
+  });
+
+  [["rCs","cs"],["rCbl","cbl"],["rVos","vos"],["rLoss","loss"]].forEach(function(p){
+    $(p[0]).addEventListener("input",function(e){ P[p[1]]=+e.target.value; paramChanged(); });
+  });
+
+  var mq=window.matchMedia("(prefers-color-scheme: dark)");
+  function applyTheme(m,persist){
+    document.documentElement.setAttribute("data-theme",m);
+    Array.prototype.forEach.call(document.querySelectorAll("#modes .md"),function(b){
+      b.setAttribute("aria-pressed", b.dataset.m===m?"true":"false");
+    });
+    if(persist){ try{ localStorage.setItem("dram-sa-theme",m); }catch(err){} }
+    readColors();
+    if(state.steps.length){ drawTimeline(); drawMargin(); updateCursor(); }
+  }
+  var saved=null; try{ saved=localStorage.getItem("dram-sa-theme"); }catch(err){}
+  applyTheme(saved || (mq.matches?"dark":"light"), false);
+  Array.prototype.forEach.call(document.querySelectorAll("#modes .md"),function(b){
+    b.addEventListener("click",function(){ applyTheme(b.dataset.m,true); });
+  });
+  if(mq.addEventListener) mq.addEventListener("change",function(){
+    var stored=null; try{ stored=localStorage.getItem("dram-sa-theme"); }catch(err){}
+    if(!stored) applyTheme(mq.matches?"dark":"light",false);
+  });
+
+  syncLabels();
+  rebuild(false);
+  var reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  state.playing=!reduce; renderTransport();
+  requestAnimationFrame(tick);
+})();
+
+(function styleStatic(){
+  var css=document.createElement("style");
+  css.textContent=
+    "#cir .lead{stroke:var(--ink3);stroke-width:2}"+
+    "#cir .leadA,#cir .leadB{stroke-width:2.4;stroke-linecap:round}"+
+    "#cir .plate{stroke:var(--ink2);stroke-width:3.4;stroke-linecap:round}"+
+    "#cir .plate2{stroke:var(--ink3);stroke-width:2.4;stroke-linecap:round}"+
+    "#cir .node{fill:var(--ink3)}"+
+    "#cir .chanoff{fill:var(--dim);opacity:.5}"+
+    "#cir .gateoff{stroke:var(--off);stroke-width:6}"+
+    "#cir .blk{fill:var(--panel);stroke:var(--rule);stroke-width:1}"+
+    "#cir .blkT{fill:var(--ink2);font-size:12.5px;text-anchor:middle;font-family:'Noto Sans KR',sans-serif}"+
+    "#cir .lb{fill:var(--ink2);font-size:13px;font-family:'Noto Sans KR',sans-serif}"+
+    "#cir .lb2{fill:var(--ink3);font-size:11.5px;font-family:'Noto Sans KR',sans-serif}"+
+    "#cir .ldr{stroke:var(--rule);stroke-width:1}"+
+    "#cir .lbP{fill:var(--hi);font-size:11px;font-family:'JetBrains Mono','Noto Sans KR',monospace}"+
+    "#cir .lbN{fill:var(--lo);font-size:11px;font-family:'JetBrains Mono','Noto Sans KR',monospace}"+
+    "#cir .mono{font-size:12.5px;font-family:'JetBrains Mono','Noto Sans KR',monospace}"+
+    "#cir .failT{fill:var(--bad);font-size:13px;font-weight:700;font-family:var(--display)}"+
+    "#cir .failS{fill:var(--bad);font-size:10.5px;font-family:'Noto Sans KR',sans-serif}";
+  document.head.appendChild(css);
+})();
+})();
+</script>
+</body>
+</html>
